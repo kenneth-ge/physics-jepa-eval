@@ -1,0 +1,48 @@
+name: kenny-bounce-void
+
+# Original void-design bounce (signal in history), run with V-JEPA2 + Qwen ONLY
+# (the whole-clip models whose last-second latents can attend back to the bounce).
+# Managed job: sky jobs launch -n kenny-bounce-void -y jobs/bounce_void.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+
+run: |
+  set +e
+  ROOT=/data/videos/bounce_void
+  rm -rf $ROOT
+  echo "=== render bounce_void sweep (mono) ==="
+  python -m evals.render_bounce_void --out-root $ROOT --seeds 8
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $ROOT --recursive --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --recursive --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  echo "=== BOUNCE_VOID SWEEP TABLE (V-JEPA + Qwen) ==="
+  python -m evals.aggregate_bounce --root $ROOT --encoders \
+      saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean

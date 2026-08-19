@@ -1,0 +1,66 @@
+name: kenny-roll
+
+# Render the roll family once with a stereo rig into a shared root, encode with
+# all four models (serialized on one H200), and print a unified table.
+# Launch: sky jobs launch -n kenny-roll -y jobs/roll.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  FAM=roll
+  ROOT=/data/videos/$FAM
+
+  echo "=== render $FAM (stereo) ==="
+  python -m evals.$FAM --out-root $ROOT --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $ROOT --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $ROOT --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $ROOT --encoders fastwam_raw fastwam_mean
+    echo "=== UNIFIED TABLE: $FAM ==="
+    python -m evals.measure --root $ROOT --encoders \
+        saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean \
+        saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean
+  ) || echo "FASTWAM/MEASURE STEP FAILED"

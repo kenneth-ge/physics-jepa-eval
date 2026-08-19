@@ -1,0 +1,36 @@
+name: kenny-dev
+
+# Interactive cluster (sky launch, NOT sky jobs) so VS Code Remote-SSH has a
+# persistent host to attach to. Same env as task.yaml but with a no-op run so it
+# does not re-render/measure anything — it just comes up and stays up.
+#   sky launch -c kenny-dev dev.yaml -y -i 90
+# Then: ssh kenny-dev   (or VS Code Remote-SSH -> host "kenny-dev").
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: interactive-prototyping
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy fastapi uvicorn matplotlib
+
+run: |
+  ln -sfn /data ~/sky_workdir/data || true
+  python -c "import torch; print('cuda available:', torch.cuda.is_available())"
+  echo "kenny-dev ready — /data mounted (symlinked at ~/sky_workdir/data)."
+  echo "model venvs on the volume: /data/{qwen,cosmos,fastwam}/venv"

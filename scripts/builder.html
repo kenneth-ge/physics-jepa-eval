@@ -1,0 +1,467 @@
+<!doctype html>
+<meta charset="utf-8"><title>3D scene builder</title>
+<style>
+ *{box-sizing:border-box} body{margin:0;font-family:system-ui;background:#101014;color:#eee;display:flex;height:100vh}
+ #view{flex:1.6;position:relative} #view canvas{display:block}
+ #hint{position:absolute;bottom:6px;left:8px;font:11px monospace;color:#777}
+ #campad{position:absolute;bottom:8px;right:8px;background:#000a;padding:6px;border-radius:6px}
+ #campad .padrow{display:flex;gap:2px;align-items:center;margin:2px 0}
+ #campad b{font:10px monospace;color:#999;width:34px}
+ #campad button{margin:0;padding:2px 8px;background:#333;font-size:12px}
+ #campad button:active{background:#36c}
+ #panel{flex:1;min-width:380px;max-width:520px;overflow-y:auto;padding:10px;border-left:1px solid #2a2a30}
+ button{margin:2px;padding:5px 10px;background:#2b4;border:0;color:#fff;cursor:pointer;border-radius:3px}
+ button.alt{background:#36c} button.warn{background:#a33} button.tab{background:#333}
+ button.tab.on{background:#36c}
+ textarea{width:100%;background:#0b0b0e;color:#cde;border:1px solid #333;font:11px/1.35 monospace}
+ pre{background:#0b0b0e;border:1px solid #333;padding:8px;white-space:pre-wrap;font-size:11px;max-height:260px;overflow-y:auto}
+ input,select{background:#222;color:#eee;border:1px solid #444;padding:4px;width:70px}
+ video{width:32%;background:#000;border:1px solid #333}
+ h4{margin:10px 0 4px} .muted{color:#888;font-size:11px}
+</style>
+<div id="view">
+ <div id="hint">click object: select &rarr; drag the 3-axis gizmo arrows to move | click empty / Esc: deselect | drag empty: orbit<br>
+ keys: WASD/arrows orbit &middot; +SHIFT pan &middot; Q/E zoom | wireframe cone = MuJoCo render camera</div>
+ <div id="campad">
+  <div class="padrow"><b>orbit</b>
+   <button data-act="ou">&#9650;</button><button data-act="od">&#9660;</button>
+   <button data-act="ol">&#9664;</button><button data-act="or">&#9654;</button></div>
+  <div class="padrow"><b>pan</b>
+   <button data-act="pu">&#9650;</button><button data-act="pd">&#9660;</button>
+   <button data-act="pl">&#9664;</button><button data-act="pr">&#9654;</button></div>
+  <div class="padrow"><b>zoom</b>
+   <button data-act="zi">+</button><button data-act="zo">&minus;</button>
+   <button id="camreset">reset</button></div>
+ </div>
+</div>
+<div id="panel">
+ <div>
+  scenario
+  <button class="tab on" id="tabA">A</button><button class="tab" id="tabB">B</button><button class="tab" id="tabC">C</button>
+  &nbsp; <button class="alt" onclick="copyTo('B')">copy&rarr;B</button>
+  <button class="alt" onclick="copyTo('C')">copy&rarr;C</button>
+  <button class="alt" onclick="mirrorCur()">mirror x</button>
+ </div>
+ <div>
+  preset <select id="preset"></select> <button class="alt" onclick="loadPreset()">load</button>
+  &nbsp; saved <select id="saved"></select>
+  <button class="alt" onclick="loadSaved()">load</button>
+  <input id="savename" placeholder="name" style="width:110px">
+  <button class="alt" onclick="save()">save</button>
+ </div>
+ <h4>add object</h4>
+ <div>
+  <button onclick="addObj('bowl')">bowl</button><button onclick="addObj('ramp')">ramp</button>
+  <button onclick="addObj('ball')">ball</button><button onclick="addObj('cube')">cube</button>
+  <span class="muted">then drag it into place</span>
+ </div>
+ <h4>selected object <span class="muted" id="selname">(none)</span></h4>
+ <textarea id="props" rows="9"></textarea>
+ <div>
+  <button onclick="applyProps()">apply</button>
+  <button class="warn" onclick="delObj()">delete</button>
+  <button onclick="addWaypoint()">+ waypoint</button>
+  <button class="warn" onclick="delWaypoint()">- waypoint</button>
+ </div>
+ <h4>scene</h4>
+ <div>
+  duration <input id="duration" type="number" step="0.5">s
+  fps <input id="fps" type="number">
+  <button class="alt" onclick="toggleJson()">scene JSON</button>
+ </div>
+ <textarea id="scenejson" rows="12" style="display:none"></textarea>
+ <div id="jsonapply" style="display:none"><button onclick="applyJson()">apply JSON</button></div>
+ <h4>render &amp; eval</h4>
+ <div>
+  <button onclick="renderOne()">render current</button>
+  <button onclick="renderAll()">render A+B+C</button>
+  <button class="alt" onclick="evalRun()">run eval (raw + mean-pool)</button>
+ </div>
+ <div id="vids">
+  <video id="vA" controls loop muted></video><video id="vB" controls loop muted></video><video id="vC" controls loop muted></video>
+ </div>
+ <pre id="out">ready</pre>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {TransformControls} from 'three/addons/controls/TransformControls.js';
+
+const PRESETS = __PRESETS__;
+const out = document.getElementById('out');
+window.onerror = (m,s,l) => { out.textContent = 'JS ERROR: ' + m + ' @' + l; };
+const r3 = v => Math.round(v * 1000) / 1000;
+
+let scenes = structuredClone(Object.values(PRESETS)[0]);
+let cur = 'A';
+let sel = null;   // {obj: index, wp: index|null}
+
+// ---------- three.js setup (z-up, matching MuJoCo) ----------
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({antialias: true});
+view.appendChild(renderer.domElement);
+const scene3 = new THREE.Scene();
+scene3.background = new THREE.Color(0x14141a);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+camera.up.set(0, 0, 1);
+camera.position.set(1.8, -2.6, 1.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0.15);
+scene3.add(new THREE.HemisphereLight(0xffffff, 0x334, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(1, -2, 3);
+scene3.add(sun);
+const grid = new THREE.GridHelper(8, 32, 0x444455, 0x26262e);
+grid.rotation.x = Math.PI / 2; scene3.add(grid);
+// MuJoCo fixed render camera indicator
+const mjCam = new THREE.PerspectiveCamera(52, 1, 0.15, 1.2);
+mjCam.up.set(0, 0, 1); mjCam.position.set(0, -2.8, 1.1); mjCam.lookAt(0, 0, 0.15);
+scene3.add(new THREE.CameraHelper(mjCam));
+
+const group = new THREE.Group(); scene3.add(group);
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight || window.innerHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+function mat(color, seld) {
+  return new THREE.MeshStandardMaterial({color, roughness: 0.6, side: THREE.DoubleSide,
+    emissive: seld ? 0x664400 : 0x000000});
+}
+const isSel = (i, wp = null) => sel && sel.obj === i && (sel.wp ?? null) === wp;
+
+function bowlMesh(o, i) {
+  const R = o.outer_radius ?? 0.46, H = o.height ?? 0.1,
+        lip = o.lip_width ?? 0.1, D = o.depth ?? Math.max(H - 0.02, 0.02);
+  const Rin = R - lip, zb = H - D, pts = [];
+  pts.push(new THREE.Vector2(R, 0), new THREE.Vector2(R, H), new THREE.Vector2(Rin, H));
+  for (let k = 8; k >= 0; k--) {
+    const r = Rin * k / 8;
+    pts.push(new THREE.Vector2(Math.max(r, 0.001), zb + D * (r / Rin) ** 2));
+  }
+  const m = new THREE.Mesh(new THREE.LatheGeometry(pts.reverse(), 40), mat(0x8a8a99, isSel(i)));
+  m.rotation.x = Math.PI / 2;                       // lathe is y-up; make it z-up
+  const g = new THREE.Group(); g.add(m);
+  g.position.set(o.pos?.[0] ?? 0, o.pos?.[1] ?? 0, o.pos?.[2] ?? 0);
+  g.traverse(c => c.userData = {obj: i});
+  return g;
+}
+
+function rampMesh(o, i) {
+  const L = o.length ?? 0.6, W = o.width ?? 0.5, th = o.thickness ?? 0.012,
+        ang = (o.angle_deg ?? 12) * Math.PI / 180, yaw = (o.yaw_deg ?? 0) * Math.PI / 180;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(L, W, 2 * th), mat(0x99805e, isSel(i)));
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), yaw);
+  q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -ang));
+  m.quaternion.copy(q);
+  m.position.set(o.pos?.[0] ?? 0, o.pos?.[1] ?? 0,
+                 (o.pos?.[2] ?? 0) + (L / 2) * Math.sin(ang) - th * Math.cos(ang));
+  m.userData = {obj: i};
+  return m;
+}
+
+function ballMesh(o, i) {
+  const r = o.radius ?? 0.08;
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat(0xd94040, isSel(i)));
+  m.userData = {obj: i}; g.add(m);
+  const v = o.vel ?? [0, 0, 0], sp = Math.hypot(v[0], v[1], v[2]);
+  if (sp > 1e-6) {
+    // display-only: no userData, so the arrow is not pickable
+    g.add(new THREE.ArrowHelper(
+      new THREE.Vector3(...v).normalize(), new THREE.Vector3(0, 0, 0),
+      r + 0.25 * sp, 0xffcc33, 0.06, 0.03));
+  }
+  g.position.set(...(o.pos ?? [0, 0, r]));
+  return g;
+}
+
+function cubeMesh(o, i) {
+  const h = o.half ?? 0.09, g = new THREE.Group();
+  const curve = o.curve ?? [];
+  const m = new THREE.Mesh(new THREE.BoxGeometry(2*h, 2*h, 2*h), mat(0x3f6fd9, isSel(i)));
+  m.position.set(...(curve[0]?.pos ?? [0, 0, 0.5]));
+  m.userData = {obj: i}; g.add(m);
+  if (curve.length > 1) {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(curve.map(w => new THREE.Vector3(...w.pos))),
+      new THREE.LineBasicMaterial({color: 0x66aaff}));
+    g.add(line);
+  }
+  curve.forEach((w, j) => {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8),
+      mat(isSel(i, j) ? 0xffaa00 : 0x66aaff, isSel(i, j)));
+    s.position.set(...w.pos); s.userData = {obj: i, wp: j}; g.add(s);
+  });
+  return g;
+}
+
+function rebuild() {
+  group.clear();
+  (scenes[cur].objects ?? []).forEach((o, i) => {
+    const f = {bowl: bowlMesh, ramp: rampMesh, ball: ballMesh, cube: cubeMesh}[o.type];
+    if (f) group.add(f(o, i));
+  });
+  document.getElementById('duration').value = scenes[cur].duration ?? 7;
+  document.getElementById('fps').value = scenes[cur].fps ?? 25;
+  if (document.getElementById('scenejson').style.display !== 'none')
+    document.getElementById('scenejson').value = JSON.stringify(scenes[cur], null, 1);
+}
+
+// ---------- picking & dragging ----------
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+// three.js picks lines/points with a huge 1.0-unit default threshold —
+// tighten it so clicks near (not on) objects fall through to orbit.
+ray.params.Line = {threshold: 0.01};
+ray.params.Points = {threshold: 0.01};
+
+// ---- 3-axis translate gizmo, attached to a proxy at the selection ----
+const proxy = new THREE.Object3D(); scene3.add(proxy);
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.setMode('translate'); gizmo.setSize(0.8);
+scene3.add(gizmo);
+gizmo.addEventListener('dragging-changed', e => controls.enabled = !e.value);
+
+function targetPos(o) {           // [x, y, z] of the selected drag target
+  if (sel.wp != null) return o.curve[sel.wp].pos;
+  if (o.type === 'ball') return o.pos;
+  if (o.type === 'cube') return o.curve?.[0]?.pos ?? [0, 0, 0.5];
+  return [o.pos?.[0] ?? 0, o.pos?.[1] ?? 0, o.pos?.[2] ?? 0];   // bowl/ramp
+}
+function attachGizmo() {
+  if (!sel) { gizmo.detach(); return; }
+  const o = scenes[cur].objects[sel.obj];
+  proxy.position.set(...targetPos(o));
+  gizmo.showX = gizmo.showY = gizmo.showZ = true;
+  gizmo.attach(proxy);
+}
+gizmo.addEventListener('objectChange', () => {
+  if (!sel) return;
+  const o = scenes[cur].objects[sel.obj];
+  const p = proxy.position;
+  if (sel.wp != null) {
+    p.z = Math.max(p.z, 0.02);
+    o.curve[sel.wp].pos = [r3(p.x), r3(p.y), r3(p.z)];
+  } else if (o.type === 'ball') {
+    p.z = Math.max(p.z, o.radius ?? 0.08);
+    o.pos = [r3(p.x), r3(p.y), r3(p.z)];
+  } else if (o.type === 'cube') {
+    // dragging the cube body translates the whole curve
+    const first = o.curve?.[0]?.pos ?? [0, 0, 0.5];
+    const d = [p.x - first[0], p.y - first[1], Math.max(p.z, 0.05) - first[2]];
+    for (const w of o.curve ?? []) w.pos = w.pos.map((v, k) => r3(v + d[k]));
+  } else if (o.pos) {   // bowl / ramp: keep z only when lifted off the ground
+    const z = Math.max(p.z, 0);
+    o.pos = z > 0.001 ? [r3(p.x), r3(p.y), r3(z)] : [r3(p.x), r3(p.y)];
+  }
+  showProps(); rebuild();
+});
+
+function setRay(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (gizmo.dragging || gizmo.axis) return;   // pointer is on the gizmo
+  setRay(e);
+  const hits = ray.intersectObjects(group.children, true)
+                  .filter(h => h.object.isMesh && h.object.userData?.obj !== undefined);
+  if (hits.length) {
+    const wpHit = hits.find(h => h.object.userData.wp !== undefined);
+    sel = {...(wpHit ?? hits[0]).object.userData};
+  } else { sel = null; }
+  attachGizmo(); showProps(); rebuild();
+});
+
+// ---------- panel ----------
+function showProps() {
+  const el = document.getElementById('props'), nm = document.getElementById('selname');
+  if (!sel) { el.value = ''; nm.textContent = '(none)'; return; }
+  const o = scenes[cur].objects[sel.obj];
+  nm.textContent = `#${sel.obj} ${o.type}` + (sel.wp != null ? ` / waypoint ${sel.wp}` : '');
+  el.value = JSON.stringify(o, null, 1);
+}
+window.applyProps = () => {
+  if (!sel) return;
+  try { scenes[cur].objects[sel.obj] = JSON.parse(document.getElementById('props').value); }
+  catch (e) { out.textContent = 'bad JSON: ' + e.message; return; }
+  attachGizmo(); rebuild(); out.textContent = 'applied';
+};
+window.delObj = () => { if (sel) { scenes[cur].objects.splice(sel.obj, 1); sel = null; attachGizmo(); showProps(); rebuild(); } };
+window.addWaypoint = () => {
+  if (!sel) return;
+  const o = scenes[cur].objects[sel.obj];
+  if (o.type !== 'cube') { out.textContent = 'waypoints only apply to cubes'; return; }
+  const last = o.curve[o.curve.length - 1];
+  o.curve.push({t: r3((last?.t ?? 0) + 1), pos: [r3((last?.pos[0] ?? 0) + 0.3), 0, last?.pos[2] ?? 0.5]});
+  showProps(); rebuild();
+};
+window.delWaypoint = () => {
+  if (sel?.wp == null) { out.textContent = 'select a waypoint first'; return; }
+  scenes[cur].objects[sel.obj].curve.splice(sel.wp, 1); sel.wp = null; attachGizmo(); showProps(); rebuild();
+};
+const DEFAULTS = {
+  bowl: {type: 'bowl', pos: [0, 0], outer_radius: 0.46, height: 0.12, lip_width: 0.1,
+         depth: 0.1, friction: [1.0, 0.01, 0.002]},
+  ramp: {type: 'ramp', pos: [0.76, 0], yaw_deg: 180, length: 0.62, width: 0.5,
+         angle_deg: 12, friction: [1.0, 0.01, 0.002]},
+  ball: {type: 'ball', pos: [0.8, 0, 0.08], vel: [-1, 0, 0], radius: 0.08,
+         friction: [1.0, 0.01, 0.002]},
+  cube: {type: 'cube', half: 0.09, curve: [{t: 0, pos: [-0.5, 0, 0.7]}, {t: 2, pos: [0.5, 0, 0.7]}]},
+};
+window.addObj = t => {
+  (scenes[cur].objects ??= []).push(structuredClone(DEFAULTS[t]));
+  sel = {obj: scenes[cur].objects.length - 1}; attachGizmo(); showProps(); rebuild();
+};
+window.copyTo = t => { scenes[t] = structuredClone(scenes[cur]); out.textContent = `copied ${cur} -> ${t}`; };
+window.mirrorCur = () => {
+  for (const o of scenes[cur].objects ?? []) {
+    if (o.pos) o.pos[0] = r3(-o.pos[0]);
+    if (o.vel) o.vel[0] = r3(-o.vel[0]);
+    if (o.type === 'ramp') o.yaw_deg = 180 - (o.yaw_deg ?? 0);
+    if (o.curve) for (const w of o.curve) w.pos[0] = r3(-w.pos[0]);
+  }
+  attachGizmo(); showProps(); rebuild();
+};
+for (const t of ['A', 'B', 'C']) {
+  document.getElementById('tab' + t).onclick = () => {
+    cur = t; sel = null; attachGizmo();
+    for (const u of ['A', 'B', 'C'])
+      document.getElementById('tab' + u).classList.toggle('on', u === t);
+    showProps(); rebuild();
+  };
+}
+document.getElementById('duration').onchange = e => scenes[cur].duration = +e.target.value;
+document.getElementById('fps').onchange = e => scenes[cur].fps = +e.target.value;
+window.toggleJson = () => {
+  const ta = document.getElementById('scenejson'), ap = document.getElementById('jsonapply');
+  const show = ta.style.display === 'none';
+  ta.style.display = show ? 'block' : 'none'; ap.style.display = show ? 'block' : 'none';
+  if (show) ta.value = JSON.stringify(scenes[cur], null, 1);
+};
+window.applyJson = () => {
+  try { scenes[cur] = JSON.parse(document.getElementById('scenejson').value); }
+  catch (e) { out.textContent = 'bad JSON: ' + e.message; return; }
+  sel = null; attachGizmo(); showProps(); rebuild();
+};
+
+// ---------- presets / server ----------
+const presel = document.getElementById('preset');
+for (const k of Object.keys(PRESETS)) presel.add(new Option(k));
+window.loadPreset = () => { scenes = structuredClone(PRESETS[presel.value]); sel = null; attachGizmo(); showProps(); rebuild(); };
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.detail ?? JSON.stringify(j));
+  return j;
+}
+async function renderScenario(s) {
+  out.textContent = `rendering ${s}...`;
+  const j = await post('/render', {scenario: s, scene: scenes[s]});
+  document.getElementById('v' + s).src = j.url + '?t=' + Date.now();
+  out.textContent = `${s} rendered. ball stats: ` + JSON.stringify(j.stats);
+}
+window.renderOne = () => renderScenario(cur).catch(e => out.textContent = 'ERROR ' + e.message);
+window.renderAll = async () => {
+  try { for (const s of ['A', 'B', 'C']) await renderScenario(s); }
+  catch (e) { out.textContent = 'ERROR ' + e.message; }
+};
+window.evalRun = async () => {
+  out.textContent = 'evaluating (model load ~30s)...';
+  try { out.textContent = (await post('/eval', {})).output; }
+  catch (e) { out.textContent = 'ERROR ' + e.message; }
+};
+window.save = async () => {
+  await post('/save', {name: document.getElementById('savename').value || 'unnamed', scenes});
+  refreshSaved(); out.textContent = 'saved';
+};
+async function refreshSaved() {
+  const names = await (await fetch('/list')).json();
+  const el = document.getElementById('saved'); el.innerHTML = '';
+  for (const n of names) el.add(new Option(n));
+}
+window.loadSaved = async () => {
+  scenes = await (await fetch('/load/' + document.getElementById('saved').value)).json();
+  sel = null; attachGizmo(); showProps(); rebuild();
+};
+refreshSaved();
+
+// ---------- camera controls: hold-buttons + keyboard holds ----------
+const HOME = {pos: camera.position.clone(), target: controls.target.clone()};
+const held = new Set();
+let shiftHeld = false;
+const KEYMAP = {arrowleft:'ol', a:'ol', arrowright:'or', d:'or',
+                arrowup:'ou', w:'ou', arrowdown:'od', s:'od',
+                q:'zo', e:'zi', '-':'zo', '=':'zi'};
+const editing = e => ['TEXTAREA','INPUT','SELECT'].includes(e.target.tagName);
+window.addEventListener('keydown', e => {
+  if (e.key === 'Shift') shiftHeld = true;
+  if (editing(e)) return;
+  if (e.key === 'Escape') { sel = null; attachGizmo(); showProps(); rebuild(); return; }
+  const a = KEYMAP[e.key.toLowerCase()];
+  if (a) { held.add(a); e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'Shift') shiftHeld = false;
+  const a = KEYMAP[e.key.toLowerCase()];
+  if (a) held.delete(a);
+});
+window.addEventListener('blur', () => { held.clear(); shiftHeld = false; });
+for (const b of document.querySelectorAll('#campad button[data-act]')) {
+  const start = e => { held.add(b.dataset.act); e.preventDefault(); };
+  const stop = () => held.delete(b.dataset.act);
+  b.addEventListener('pointerdown', start);
+  b.addEventListener('pointerup', stop);
+  b.addEventListener('pointerleave', stop);
+}
+document.getElementById('camreset').onclick = () => {
+  camera.position.copy(HOME.pos); controls.target.copy(HOME.target);
+};
+const Z = new THREE.Vector3(0, 0, 1);
+function act(a) {   // shift turns orbit keys into pan
+  if (held.has(a)) return true;
+  if (shiftHeld && a[0] === 'p') return held.has('o' + a[1]);
+  return false;
+}
+function applyCamera(dt) {
+  const off = camera.position.clone().sub(controls.target);
+  const dir = off.clone().normalize();
+  const right = new THREE.Vector3().crossVectors(dir, Z).normalize();
+  const orbitOn = a => held.has(a) && !shiftHeld;
+  if (orbitOn('ol')) off.applyAxisAngle(Z, 1.6 * dt);
+  if (orbitOn('or')) off.applyAxisAngle(Z, -1.6 * dt);
+  for (const [key, sign] of [['ou', 1], ['od', -1]]) {
+    if (!orbitOn(key)) continue;
+    const next = off.clone().applyAxisAngle(right, -sign * 1.2 * dt);
+    const cosPolar = next.z / next.length();
+    if (cosPolar > 0.02 && cosPolar < 0.995) off.copy(next);
+  }
+  const pan = new THREE.Vector3();
+  if (act('pl')) pan.addScaledVector(right, 1.2 * dt);
+  if (act('pr')) pan.addScaledVector(right, -1.2 * dt);
+  if (act('pu')) pan.z += 1.0 * dt;
+  if (act('pd')) pan.z -= 1.0 * dt;
+  if (act('zi')) off.multiplyScalar(Math.max(1 - 1.6 * dt, 0.1));
+  if (act('zo')) off.multiplyScalar(1 + 1.6 * dt);
+  off.setLength(Math.min(Math.max(off.length(), 0.3), 20));
+  controls.target.add(pan);
+  camera.position.copy(controls.target).add(off);
+}
+let lastT = performance.now();
+resize(); rebuild();
+(function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(((now ?? performance.now()) - lastT) / 1000, 0.05);
+  lastT = now ?? performance.now();
+  applyCamera(dt);
+  controls.update();
+  renderer.render(scene3, camera);
+})(performance.now());
+</script>

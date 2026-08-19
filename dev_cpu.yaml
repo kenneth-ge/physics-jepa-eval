@@ -1,0 +1,32 @@
+name: kenny-dev
+
+# CPU-only interactive box (no GPU reserved) for VS Code / browsing the /data
+# volume and editing code. Renders on CPU via osmesa if needed. GPU compute
+# runs as managed jobs on their own boxes.
+#   sky launch -c kenny-dev dev_cpu.yaml -y
+# Then: VS Code Remote-SSH -> host "kenny-dev", open ~/sky_workdir.
+
+resources:
+  cpus: 8
+  memory: 32
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: interactive-cpu-browsing
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: osmesa      # CPU software rendering (no GPU/EGL)
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libgl1 libglib2.0-0 libosmesa6 ffmpeg
+  pip install -q mujoco "imageio[ffmpeg]" numpy matplotlib
+
+run: |
+  ln -sfn /data ~/sky_workdir/data || true
+  echo "kenny-dev (CPU-only) ready — /data mounted at ~/sky_workdir/data."

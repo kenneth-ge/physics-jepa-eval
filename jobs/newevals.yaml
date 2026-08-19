@@ -1,0 +1,56 @@
+name: kenny-newevals
+
+# Run the two new families (occlusion, count2) across all 4 models on the
+# already-up kenny-dev. sky exec re-syncs the repo so the new eval files land.
+#   sky exec kenny-dev jobs/newevals.yaml -d
+# occlusion -> /data/videos/occlusion (30 cases); count2 -> /data/videos/count2_sweep (sweep).
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+run: |
+  set +e
+  OCC=/data/videos/occlusion
+  C2=/data/videos/count2_sweep
+
+  echo "=== render occlusion (stereo) ==="
+  python -m evals.occlusion --out-root $OCC --rig stereo
+  echo "=== render count2 (stereo) ==="
+  python -m evals.render_count2 --out-root $C2 --seeds 8 --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $OCC --encoders vjepa2_raw vjepa2_mean
+  python -m evals.precompute --root $C2 --recursive --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $OCC --encoders qwen3vl_raw qwen3vl_mean
+    python -m evals.precompute --root $C2 --recursive --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $OCC --encoders cosmos_raw cosmos_mean
+    python -m evals.precompute --root $C2 --recursive --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $OCC --encoders fastwam_raw fastwam_mean
+    python -m evals.precompute --root $C2 --recursive --encoders fastwam_raw fastwam_mean
+
+    ENC="saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean"
+    echo "=== OCCLUSION TABLE ==="
+    python -m evals.measure --root $OCC --encoders $ENC
+    echo "=== COUNT2 SWEEP TABLE ==="
+    python -m evals.aggregate_counting --root $C2 --encoders $ENC
+  ) || echo "FASTWAM/MEASURE STEP FAILED"

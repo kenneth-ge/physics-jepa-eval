@@ -1,0 +1,52 @@
+name: kenny-dev
+
+resources:
+  # Guide §4: size CPU/mem to GPU count — 20 CPU + 230 GB per GPU.
+  # memory: is a hard limit (request == limit since 2026-08-12).
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  # Not a training job — opt out of the training-v1 telemetry contract (§6.7).
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: interactive-vjepa2-prototyping
+
+workdir: .
+
+# Personal volume (workspace: fellows). Durable across sky down.
+# Bulk/temp data belongs on /tmp (node NVMe) — see the guide, §5.
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl        # headless GPU rendering; set to "osmesa" if EGL fails
+  HF_HOME: /data/hf     # cache V-JEPA 2 weights on the volume across runs
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  # Guide §8: host driver is CUDA 12.8 — must use cu128 wheels.
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy fastapi uvicorn
+
+# Bowl experiment: render scenes A/B/C for both scenarios, encode WHOLE
+# clips with V-JEPA 2, pool only the last second's temporal tokens, test
+# that final-state similarity separates {A,B} from C despite the history.
+# For day-to-day iteration use `sky exec kenny-dev task.yaml` or `ssh kenny-dev`.
+run: |
+  python -c "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; print('torch', torch.__version__, 'cuda ok')"
+
+  # Spatial-configuration families: render all evals into
+  # <root>/<id>/{A,B,C}.mp4, then measure the whole family in one process
+  # (encoder loaded once) -> PASS/FAIL matrix.
+  for fam in bowl cube; do
+    echo "=== $fam ==="
+    python -m evals.$fam --out-root /data/videos/$fam
+    python -m evals.measure --root /data/videos/$fam
+  done
+
+  # Counting is inherently a multi-seed sweep: the cardinality signal (if any)
+  # lives in a narrow band, so a single seed is noise. This renders + measures
+  # counts 1..10 across seeds and reports per-count pass rates and margins.
+  echo "=== basic_counting (multi-seed sweep) ==="
+  python -m evals.sweep_counting --seeds 8 --out-root /data/videos/counting_sweep
