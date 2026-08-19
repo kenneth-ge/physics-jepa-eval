@@ -43,16 +43,17 @@ COUNT2 = [
     (10, [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
 ]
 
-# --- bounce ADJUSTED: rebound in the last second (all 4 models) --------------
+# --- bounce ADJUSTED: rebound in last second; A,B share drop point, B = A + a
+# 0.5s still prefix (no position confound); all 4 models (job 8913) -----------
 BOUNCE_ADJ = [
-    (0.50, [0.00, 0.00, 0.00, 0.38, 0.00, 0.62, 0.00, 0.00]),
-    (0.70, [0.00, 0.00, 0.00, 0.00, 0.00, 0.25, 0.00, 0.00]),
-    (0.85, [0.00, 0.00, 0.00, 0.12, 0.00, 0.38, 0.00, 0.00]),
+    (0.50, [0.00, 0.00, 0.12, 0.00, 0.50, 1.00, 0.00, 0.00]),
+    (0.70, [0.00, 0.00, 0.00, 0.00, 0.38, 1.00, 0.00, 0.00]),
+    (0.85, [0.00, 0.00, 0.12, 0.00, 0.25, 1.00, 0.00, 0.00]),
     (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.20, [0.00, 0.00, 0.00, 0.50, 0.00, 0.12, 0.00, 0.00]),
-    (1.50, [0.00, 0.00, 0.00, 0.50, 0.00, 0.38, 0.00, 0.00]),
-    (1.75, [0.00, 0.00, 0.00, 1.00, 0.00, 1.00, 0.25, 0.25]),
-    (2.00, [0.00, 0.00, 0.88, 1.00, 0.00, 1.00, 0.88, 0.88]),
+    (1.20, [0.00, 0.00, 0.88, 0.25, 0.50, 1.00, 1.00, 1.00]),
+    (1.50, [0.00, 0.00, 1.00, 0.38, 0.62, 1.00, 1.00, 1.00]),
+    (1.75, [0.00, 0.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (2.00, [0.00, 0.12, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
 ]
 
 # --- bounce VOID: signal only in history; V-JEPA + Qwen only -----------------
@@ -108,8 +109,8 @@ doc.append("VJEPA & Qwen: only X=1 passes; X≥2 at/below chance.\n")
 doc.append("## count2 — NESTED counting (A⊂B⊂C: X, X+1, 2X), sweep over X\n")
 doc.append(table(["X"] + MODELS8, COUNT2) + "\n")
 
-doc.append("## bounce (adjusted) — rebound in the last second, sweep r2/r1 "
-           "(r1=0.45; 1.00 = control C≡A)\n")
+doc.append("## bounce (adjusted) — rebound in the last second; A,B share drop "
+           "point (B = A + 0.5s still prefix); sweep r2/r1 (r1=0.45; 1.00 = control C≡A)\n")
 doc.append(table(["factor"] + MODELS8,
                  [(f"{f:.2f}", v) for f, v in BOUNCE_ADJ]) + "\n")
 
