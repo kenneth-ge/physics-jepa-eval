@@ -31,6 +31,9 @@ def main():
                         help="registered encoder name(s) to run in THIS env")
     parser.add_argument("--recursive", action="store_true",
                         help="find every dir with an mp4 under --root (e.g. sweep seeds)")
+    parser.add_argument("--clips", nargs="+", default=None,
+                        help="only encode these clip stems (e.g. --clips A B C skips "
+                             "stereo right-cam inputs like A_right)")
     args = parser.parse_args()
 
     encoders = [(name, get_encoder(name)) for name in args.encoders]
@@ -42,7 +45,10 @@ def main():
     if not dirs:
         raise SystemExit(f"no eval subdirs with mp4s under {args.root}")
     for d in dirs:
-        clips = sorted(d.glob("*.mp4"))
+        clips = sorted(c for c in d.glob("*.mp4")
+                       if args.clips is None or c.stem in args.clips)
+        if not clips:
+            continue
         for tag, enc in encoders:
             for clip in clips:
                 vec = np.asarray(enc.encode(clip))
