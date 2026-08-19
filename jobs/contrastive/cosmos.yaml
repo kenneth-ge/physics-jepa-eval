@@ -1,0 +1,52 @@
+name: kenny-cosmos
+
+# Managed job: unattended, auto-recovers on preemption, and does NOT autostop
+# mid-run — so a long weight download / encode can't be killed by idle timeout.
+# Launch with: sky jobs launch -n kenny-cosmos -y jobs/contrastive/cosmos.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf        # cache the ~120GB Cosmos3-Super weights on the volume
+  # COSMOS_MODEL_ID: nvidia/Cosmos3-Nano   # uncomment to fall back if Super OOMs
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg libgl1 libglib2.0-0
+  bash scripts/setup_cosmos.sh
+
+run: |
+  source /data/cosmos/venv/bin/activate
+  python -c "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; print('torch', torch.__version__, 'cuda ok')"
+
+  # Encode every family's existing mono A/B/C.mp4 -> cosmos_{raw,mean} vectors,
+  # written beside each clip as <name>__cosmos_*.npy (read later via saved:).
+  for fam in cube bowl; do
+    echo "=== precompute cosmos: $fam ==="
+    python -m evals.precompute --root /data/videos/$fam \
+        --encoders cosmos_raw cosmos_mean
+  done
+  echo "=== precompute cosmos: counting_sweep ==="
+  python -m evals.precompute --root /data/videos/counting_sweep --recursive \
+      --encoders cosmos_raw cosmos_mean
+
+  # Report Cosmos-only tables straight from the saved vectors.
+  for fam in cube bowl; do
+    echo "=== measure cosmos: $fam ==="
+    python -m evals.contrastive.measure --root /data/videos/$fam \
+        --encoders saved:cosmos_raw saved:cosmos_mean
+  done
+  echo "=== aggregate cosmos: counting_sweep ==="
+  python -m evals.contrastive.aggregate_counting --root /data/videos/counting_sweep \
+      --encoders saved:cosmos_raw saved:cosmos_mean

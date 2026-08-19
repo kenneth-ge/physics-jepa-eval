@@ -1,0 +1,83 @@
+name: kenny-basics
+
+# Managed job: render the two new families (basic_color, basic_position) once
+# with a stereo rig into shared roots, then encode with all four models in
+# their own venvs (serialized on one H200 — one model in VRAM at a time), and
+# print a unified per-family table from the saved vectors.
+# Launch: sky jobs launch -n kenny-basics -y jobs/contrastive/basics.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  # Default env: V-JEPA + rendering.
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  # Per-model venvs (all cached on the volume from prior runs -> fast).
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e   # one model failing must not abort the rest
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  FAMS="basic_color basic_position"
+
+  # 1) Render each family ONCE with the stereo rig into the shared root, so the
+  #    mono models read A.mp4 and FastWAM reads A.mp4 + A_right.mp4 from one dir.
+  for fam in $FAMS; do
+    echo "=== render $fam (stereo) ==="
+    python -m evals.contrastive.$fam --out-root /data/videos/$fam --rig stereo
+  done
+
+  # 2) Encode with each model in its own environment -> <name>__<tag>.npy.
+  for fam in $FAMS; do
+    echo "=== vjepa precompute: $fam ==="
+    python -m evals.precompute --root /data/videos/$fam --encoders vjepa2_raw vjepa2_mean
+  done
+
+  ( source /data/qwen/venv/bin/activate
+    for fam in $FAMS; do
+      echo "=== qwen precompute: $fam ==="
+      python -m evals.precompute --root /data/videos/$fam --encoders qwen3vl_raw qwen3vl_mean
+    done ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    for fam in $FAMS; do
+      echo "=== cosmos precompute: $fam ==="
+      python -m evals.precompute --root /data/videos/$fam --encoders cosmos_raw cosmos_mean
+    done ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    for fam in $FAMS; do
+      echo "=== fastwam precompute: $fam ==="
+      python -m evals.precompute --root /data/videos/$fam --encoders fastwam_raw fastwam_mean
+    done ) || echo "FASTWAM STEP FAILED"
+
+  # 3) Unified 4-model table per family, straight from the saved vectors.
+  for fam in $FAMS; do
+    echo "=== UNIFIED TABLE: $fam ==="
+    python -m evals.contrastive.measure --root /data/videos/$fam --encoders \
+        saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean \
+        saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean
+  done

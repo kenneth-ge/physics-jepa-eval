@@ -1,4 +1,4 @@
-"""Generate RESULTS.md with colour-shaded HTML tables (pass-rate heatmap).
+"""Generate RESULTS_contrastive.md with colour-shaded HTML tables (pass-rate heatmap).
 
 Cells carry the L1 pass rate; background is a diverging scale centred on chance
 (~0.33): red = at/below chance (bad), pale-yellow ~chance, green = high (good).
@@ -119,5 +119,5 @@ doc.append(table(["factor", "VJEPA flat", "VJEPA mean", "Qwen flat", "Qwen mean"
 doc.append("Whole-clip attention does **not** recover a history-only signal at "
            "the last-second readout — at/below chance at every factor.\n")
 
-pathlib.Path("RESULTS.md").write_text("\n".join(doc))
-print("wrote RESULTS.md")
+pathlib.Path("RESULTS_contrastive.md").write_text("\n".join(doc))
+print("wrote RESULTS_contrastive.md")

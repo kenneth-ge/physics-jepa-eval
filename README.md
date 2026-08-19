@@ -38,22 +38,34 @@ reported in both cosine similarity and L1 distance.
 
 ## Layout
 
-Each eval family is a generator module under `evals/`; they share one CLI
-harness (`evals/common/family.py`) so all behave identically:
+Two eval paradigms, one package each, sharing `evals/common/`, `evals/encoders/`
+and `evals/precompute.py`:
+
+- `evals/contrastive/` — A/B/C triplets; the ordinal invariant d(A,B) <
+  d(A,C), d(B,C). All families below plus `measure.py` and `aggregate_*.py`.
+  Results: `RESULTS_contrastive.md` (via `scripts/gen_results.py`).
+- `evals/continuous/` — pairwise-continuous: each case renders a ladder of
+  clips at parameter values θ (declared in a per-case `manifest.json`, see
+  `evals/common/manifest.py`); `evals.continuous.measure` scores the Spearman
+  correlation between |Δθ| and embedding distance (cos + L1) over all clip
+  pairs. Results: `RESULTS_continuous.md`. Jobs: `jobs/continuous/`.
+
+Each eval family is a generator module; they share one CLI harness
+(`evals/common/family.py`) so all behave identically:
 
 ```bash
-python -m evals.<family> --out-root <dir>   # render all evals -> <dir>/<id>/{A,B,C}.mp4
-python -m evals.<family> --check            # validate the contract on CPU, no render
-python -m evals.<family> --out-root <dir> --only 3   # a subset of eval ids
+python -m evals.contrastive.<family> --out-root <dir>   # render all evals -> <dir>/<id>/{A,B,C}.mp4
+python -m evals.contrastive.<family> --check            # validate the contract on CPU, no render
+python -m evals.contrastive.<family> --out-root <dir> --only 3   # a subset of eval ids
 ```
 
-- `evals/bowl.py` — scenarios 1–4 → `scenario_1..4/` (heightfield bowl —
+- `evals/contrastive/bowl.py` — scenarios 1–4 → `scenario_1..4/` (heightfield bowl —
   MuJoCo convexifies meshes, so a concave mesh bowl wouldn't collide).
   Contract: A/B settle at the same spot, everything at rest >1 s.
-- `evals/cube.py` — one eval `arc/`: kinematic (mocap, collision-free) cube
+- `evals/contrastive/cube.py` — one eval `arc/`: kinematic (mocap, collision-free) cube
   on semicircular arcs. A: counterclockwise X→Y; B: clockwise X→Y (same
   endpoints, different path); C: A's arc translated (different start/end).
-- `evals/basic_counting.py` — evals 1–10 → `eval_01..10/`: A has X prisms,
+- `evals/contrastive/basic_counting.py` — evals 1–10 → `eval_01..10/`: A has X prisms,
   B has X prisms elsewhere, C has X+1 prisms at fresh positions (`--c-mode
   union` restores the old 2X superset variant). Static scenes.
 - `evals/encoders/` — the model as a **black box**: `Encoder.encode(video)
@@ -73,15 +85,16 @@ python -m evals.<family> --out-root <dir> --only 3   # a subset of eval ids
   Qwen3-VL, and Cosmos each need incompatible deps, so they run in their own
   venvs (`scripts/setup_{fastwam,qwen,cosmos}.sh`). In that venv you run
   `python -m evals.precompute --root <videos> --encoder <name> --tag <tag>`,
-  which writes `<A|B|C>__<tag>.npy` next to each clip; then `measure`
+  which writes `<stem>__<tag>.npy` next to every `*.mp4` (paradigm-agnostic:
+  A/B/C triplets or continuous clip ladders alike); then `measure`
   (default env) consumes them with `--encoders saved:<tag> ...` and puts every
   model in the same PASS/FAIL table. V-JEPA can be run either way.
-- `evals/measure.py` — model-agnostic runner (`--videos <dir>` or `--root
+- `evals/contrastive/measure.py` — model-agnostic runner (`--videos <dir>` or `--root
   <dir>`, `--encoders ...`). It only ever sees vectors, so it works with any
   registered encoder. For each encoder it tests the invariant in cosine and
   L1 and prints a PASS/FAIL matrix. Never gates via exit code: the goal is
   mapping where the invariant fails, not making it pass.
-- `evals/sweep_counting.py` — the canonical way to run counting: renders +
+- `evals/contrastive/sweep_counting.py` — the canonical way to run counting: renders +
   measures counts 1–10 across many seeds (encoder loaded once) and aggregates
   per-count pass rates + mean margins. A single seed is too noisy for a
   cardinality signal, so `task.yaml` always runs counting as this sweep;

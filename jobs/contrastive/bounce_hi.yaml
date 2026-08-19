@@ -1,0 +1,55 @@
+name: kenny-bounce-hi
+
+# Extended bounce sweep: factor 0.5 -> 2.0. Restitution must stay < 1, so the
+# base drops to r1=0.45 (=> r2 = factor*0.45 in [0.23, 0.90], all physical).
+# Run on the already-up kenny-dev via `sky exec` (no re-setup needed):
+#   sky exec kenny-dev jobs/contrastive/bounce_hi.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+run: |
+  set +e
+  ROOT=/data/videos/bounce_sweep_hi
+  FACTORS="0.5 0.7 0.85 1.0 1.2 1.4 1.6 1.8 2.0"
+
+  echo "=== render extended bounce sweep (r1=0.45, stereo) ==="
+  python -m evals.contrastive.render_bounce --out-root $ROOT --seeds 8 --rig stereo \
+      --r1 0.45 --factors $FACTORS
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $ROOT --recursive --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --recursive --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $ROOT --recursive --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $ROOT --recursive --encoders fastwam_raw fastwam_mean
+
+    echo "=== EXTENDED BOUNCE SWEEP TABLE (all models) ==="
+    python -m evals.contrastive.aggregate_bounce --root $ROOT --encoders \
+        saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean \
+        saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean
+  ) || echo "FASTWAM/AGG STEP FAILED"

@@ -42,11 +42,11 @@ run: |
   for fam in bowl cube; do
     echo "=== $fam ==="
     python -m evals.$fam --out-root /data/videos/$fam
-    python -m evals.measure --root /data/videos/$fam
+    python -m evals.contrastive.measure --root /data/videos/$fam
   done
 
   # Counting is inherently a multi-seed sweep: the cardinality signal (if any)
   # lives in a narrow band, so a single seed is noise. This renders + measures
   # counts 1..10 across seeds and reports per-count pass rates and margins.
   echo "=== basic_counting (multi-seed sweep) ==="
-  python -m evals.sweep_counting --seeds 8 --out-root /data/videos/counting_sweep
+  python -m evals.contrastive.sweep_counting --seeds 8 --out-root /data/videos/counting_sweep

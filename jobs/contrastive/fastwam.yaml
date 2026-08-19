@@ -1,0 +1,71 @@
+name: kenny-fastwam
+
+# Managed job: survives the slow (~250kB/s) ModelScope Wan2.2 base download and
+# won't be killed by idle autostop. Launch with:
+#   sky jobs launch -n kenny-fastwam -y jobs/contrastive/fastwam.yaml
+# FastWAM takes TWO camera views, so this renders a stereo rig into *_stereo
+# roots (separate from the mono clips the other models use) and encodes those.
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+  MUJOCO_GL: egl        # headless GPU rendering for the stereo re-render
+  FASTWAM_CONFIG: /data/fastwam/FastWAM/configs/model/fastwam.yaml
+  FASTWAM_CKPT: /data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+  DIFFSYNTH_MODEL_BASE_PATH: /data/fastwam/FastWAM/checkpoints
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  bash scripts/setup_fastwam.sh          # venv + repo + install + import check
+  bash scripts/setup_fastwam_stage2.sh   # 12GB ckpt + Wan2.2 base + backbone
+  # Rendering deps live in the same venv (independent of torch/fastwam).
+  source /data/fastwam/venv/bin/activate
+  pip install -q mujoco "imageio[ffmpeg]" pillow
+
+run: |
+  source /data/fastwam/venv/bin/activate
+  python -c "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; print('torch', torch.__version__, 'cuda ok')"
+
+  # 1) Stereo renders (fixed + right cameras) — same seeded scenes as the mono
+  #    clips, so cross-model comparison is over identical scenes.
+  echo "=== render cube stereo ==="
+  [ -f /data/videos/cube_stereo/bezier_arc_0/A_right.mp4 ] || \
+    python -m evals.contrastive.cube --out-root /data/videos/cube_stereo --rig stereo
+  echo "=== render bowl stereo ==="
+  python -m evals.contrastive.bowl --out-root /data/videos/bowl_stereo --rig stereo
+  echo "=== render counting stereo ==="
+  python -m evals.contrastive.render_counting_stereo \
+      --out-root /data/videos/counting_sweep_stereo --seeds 8 --rig stereo
+
+  # 2) Encode with FastWAM -> fastwam_{raw,mean} vectors beside each clip.
+  for fam in cube_stereo bowl_stereo; do
+    echo "=== precompute fastwam: $fam ==="
+    python -m evals.precompute --root /data/videos/$fam \
+        --encoders fastwam_raw fastwam_mean
+  done
+  echo "=== precompute fastwam: counting_sweep_stereo ==="
+  python -m evals.precompute --root /data/videos/counting_sweep_stereo \
+      --recursive --encoders fastwam_raw fastwam_mean
+
+  # 3) FastWAM-only tables from the saved vectors.
+  for fam in cube_stereo bowl_stereo; do
+    echo "=== measure fastwam: $fam ==="
+    python -m evals.contrastive.measure --root /data/videos/$fam \
+        --encoders saved:fastwam_raw saved:fastwam_mean
+  done
+  echo "=== aggregate fastwam: counting_sweep_stereo ==="
+  python -m evals.contrastive.aggregate_counting --root /data/videos/counting_sweep_stereo \
+      --encoders saved:fastwam_raw saved:fastwam_mean
