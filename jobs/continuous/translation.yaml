@@ -4,7 +4,7 @@ name: kenny-translation
 # left->right past a static multicolored-cube field, 10 cases x 16 sweep
 # points) with the stereo rig, encode every sweep clip with all four models in
 # their own venvs (serialized on one H200), then score the continuous metrics
-# (Spearman rho + 2-NN ladder adjacency) from the saved vectors.
+# (2-NN ladder adjacency) from the saved vectors.
 # Launch: sky jobs launch -n kenny-translation -y jobs/continuous/translation.yaml
 
 resources:
