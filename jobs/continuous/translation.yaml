@@ -29,7 +29,7 @@ setup: |
   sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
   # Default env: V-JEPA + rendering.
   pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
-  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy pillow
   # Per-model venvs (all cached on the volume from prior runs -> fast).
   bash scripts/setup_qwen.sh
   bash scripts/setup_cosmos.sh

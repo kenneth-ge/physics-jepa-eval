@@ -17,7 +17,9 @@ points are theta-NN by construction), cubes inside the shared view of all
 sweep positions, cubes non-overlapping, hues pairwise distinct.
 
 Usage: python -m evals.continuous.translation --out-root <dir>   (--check: no render)
-Outputs <dir>/case_00 .. case_09, each with t_00..t_15.mp4 + manifest.json.
+Outputs <dir>/case_00 .. case_09, each with t_00..t_15.mp4, manifest.json and
+grid.png (a 2x8 contact sheet of the sweep, one still per point in order;
+--no-grid skips it).
 """
 
 import colorsys
@@ -31,6 +33,7 @@ from ..common.manifest import write_manifest
 from ..common.observations import write_observations
 from ..common.sim import render_static_rig
 from ..common.xml_scene import DEFAULT_CAMERA, scene_xml, fr
+from .grid import COLS as GRID_COLS, save_grid
 
 EVAL_IDS = list(range(10))
 SEED_BASE = 7100
@@ -138,7 +141,7 @@ def generate(i, out_dir, args):
 
     cam_names = cameras.rig_cameras(args.rig)
     geoms = cube_geoms(cubes)
-    clips = []
+    clips, stills, labels = [], [], []
     for k, dx in enumerate(xs):
         cam = dict(pos=[float(dx), DEFAULT_CAMERA["pos"][1], DEFAULT_CAMERA["pos"][2]])
         model = mujoco.MjModel.from_xml_string(scene_xml(
@@ -149,7 +152,12 @@ def generate(i, out_dir, args):
             duration=args.duration, fps=args.fps, size=args.size)
         write_observations(out_dir, f"t_{k:02d}", cam_frames, args.fps)
         clips.append({"file": f"t_{k:02d}.mp4", "theta": float(dx)})
+        stills.append(cam_frames[cameras.PRIMARY][0])
+        labels.append(f"{k:02d}  x={dx:+.2f}")
     write_manifest(out_dir, "camera_x", clips)
+    if not args.no_grid:
+        rows = save_grid(stills, labels, out_dir / "grid.png")
+        print(f"  wrote grid.png ({rows}x{GRID_COLS})")
     return failures
 
 
@@ -157,6 +165,8 @@ def add_args(parser):
     parser.add_argument("--duration", type=float, default=3.0)
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--size", type=int, default=256)
+    parser.add_argument("--no-grid", action="store_true",
+                        help="skip the per-case grid.png contact sheet")
 
 
 def main():

@@ -123,8 +123,10 @@ doc = [
     "translation. It gives no monotone shortcut (correlation of cube area "
     "with x is −0.07) and if anything makes adjacency harder, since frames "
     "equidistant from the centre have similar cube area and thus compete to "
-    "be each other's nearest neighbour. A contact sheet of case_00's 16 "
-    "frames is at `preview/translation_case_00_grid.png`.\n",
+    "be each other's nearest neighbour. Every case dir carries a `grid.png` "
+    "contact sheet (2×8, one still per sweep point in ladder order, labelled "
+    "with its camera x), written by the render step; case_00's copy is also "
+    "at `preview/translation_case_00_grid.png`.\n",
 ]
 
 pathlib.Path("RESULTS_continuous.md").write_text("\n".join(doc))
