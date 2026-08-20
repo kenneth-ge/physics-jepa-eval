@@ -20,24 +20,30 @@ import pathlib
 # registered encoders and are still used by the contrastive suite).
 MODELS = ["VJEPA raw", "VJEPA mean", "Qwen raw", "Cosmos raw", "FastWAM raw"]
 
-# --- translation: mean over 10 cases, one row per distance -------------------
+# --- translation: mean over 10 cases, one row per distance (job 9471) --------
 TRANSLATION_MEAN = [
-    ("nn cos", [0.714, 0.921, 0.979, 1.000, 0.643]),
-    ("nn l1",  [0.750, 0.971, 0.986, 1.000, 0.679]),
+    ("nn cos", [0.957, 0.586, 0.707, 1.000, 1.000]),
+    ("nn l1",  [0.929, 0.629, 0.714, 1.000, 1.000]),
 ]
 
 # --- translation per case (L1), 14 interior points each ----------------------
 TRANSLATION_CASES = [
-    ("case_00", [0.786, 1.000, 0.929, 1.000, 0.786]),
-    ("case_01", [0.714, 1.000, 1.000, 1.000, 0.500]),
-    ("case_02", [0.786, 1.000, 1.000, 1.000, 0.857]),
-    ("case_03", [0.857, 0.929, 1.000, 1.000, 0.571]),
-    ("case_04", [0.643, 1.000, 1.000, 1.000, 0.857]),
-    ("case_05", [0.786, 0.929, 1.000, 1.000, 0.429]),
-    ("case_06", [0.500, 1.000, 1.000, 1.000, 0.857]),
-    ("case_07", [0.857, 1.000, 1.000, 1.000, 0.500]),
-    ("case_08", [0.786, 1.000, 0.929, 1.000, 0.786]),
-    ("case_09", [0.786, 0.857, 1.000, 1.000, 0.643]),
+    ("case_00", [0.929, 0.571, 0.714, 1.000, 1.000]),
+    ("case_01", [1.000, 1.000, 0.714, 1.000, 1.000]),
+    ("case_02", [1.000, 0.071, 0.643, 1.000, 1.000]),
+    ("case_03", [0.714, 0.429, 0.571, 1.000, 1.000]),
+    ("case_04", [0.929, 0.571, 0.643, 1.000, 1.000]),
+    ("case_05", [0.929, 0.857, 0.929, 1.000, 1.000]),
+    ("case_06", [1.000, 0.500, 0.714, 1.000, 1.000]),
+    ("case_07", [0.929, 0.643, 0.714, 1.000, 1.000]),
+    ("case_08", [0.929, 0.857, 0.786, 1.000, 1.000]),
+    ("case_09", [0.929, 0.786, 0.714, 1.000, 1.000]),
+]
+
+# --- the same family before re-framing, for comparison (job 9055) ------------
+# sweep +/-1.2m (0.16m steps) with cubes allowed to leave frame at the extremes
+TRANSLATION_V1_MEAN = [
+    ("nn l1 (old)", [0.750, 0.971, 0.986, 1.000, 0.679]),
 ]
 
 CHANCE = 1.0 / 105.0        # 1/C(15,2) for a 16-clip ladder
@@ -88,19 +94,13 @@ doc = [
     "step along the parameter, not merely whether far-apart clips look far "
     "apart.\n",
 
-    "> ⚠️ **Stale — numbers below are from the previous scene geometry** "
-    "(sweep ±1.2 m, 0.16 m steps, cubes allowed to leave frame). The family "
-    "was changed so every cube stays framed at every sweep point, which "
-    "required shrinking the sweep to ±0.55 m (0.073 m steps); job "
-    "`kenny-translation-v2` is re-rendering and re-scoring. This table will be "
-    "replaced when it lands.\n",
-
     "## translation — horizontal camera sweep\n",
-    "`evals.continuous.translation` (job 9055). 10 cases; each is one static "
-    "field of 6–10 multicoloured rotated cubes, with the camera trucked "
-    "x = −1.2…+1.2 in 16 even steps of 0.16 m (orientation, height and "
-    "distance fixed; stereo rig moves in lockstep). 14 interior points per "
-    "case, 140 across the family.\n",
+    "`evals.continuous.translation` (job 9471). 10 cases; each is one static "
+    "field of 6–8 multicoloured rotated cubes, with the camera trucked "
+    "x = −0.55…+0.55 in 16 even steps of 0.073 m (orientation, height and "
+    "distance fixed; stereo rig moves in lockstep). Every cube stays fully "
+    "framed at every sweep point. 14 interior points per case, 140 across the "
+    "family.\n",
 
     "### Mean over 10 cases\n",
     table(["distance"] + MODELS, TRANSLATION_MEAN) + "\n",
@@ -110,30 +110,49 @@ doc = [
     "### Per case (L1)\n",
     table(["case"] + MODELS, TRANSLATION_CASES) + "\n",
 
-    "**Reading:** Cosmos-raw is perfect — 140/140 interior points under both "
-    "distances — and Qwen-raw nearly so (0.99): they embed the sweep as a "
-    "clean 1-D curve in which a single 0.16 m camera step is resolvable. "
-    "FastWAM-raw sits mid-table at 0.68, expected since it sees only the "
-    "final frame and so has the least to work with. V-JEPA2 is the model that "
-    "justifies keeping a pooled readout: its mean (0.97) clearly beats its "
-    "raw (0.75), because its raw grid tokens shift with the viewpoint and "
-    "make adjacent-step distances jumpier than the pooled vector does.\n",
-    "The other models' mean readouts are not run for continuous evals. They "
-    "were measured once on this family and pooling cost them heavily on this "
-    "axis (Cosmos 1.00 raw → 0.12 mean, Qwen 0.99 → 0.41), which is the "
-    "expected behaviour for a spatial parameter: mean-pooling discards the "
-    "detail that localises viewpoint. Those numbers are in git history.\n",
+    "**Reading:** Cosmos-raw and FastWAM-raw are both perfect (140/140 "
+    "interior points, both distances) and V-JEPA2-raw is close behind at "
+    "0.93. Qwen-raw resolves only about 5 steps in 7 (0.71), and V-JEPA2's "
+    "pooled readout is the weakest at 0.63 — with one case (case_02) "
+    "collapsing to 0.07, i.e. essentially no local ordering at all.\n",
 
-    "**Framing note:** cubes enter and leave the frame toward the sweep "
-    "extremes (visible cube area peaks mid-sweep and falls ~1.6× at either "
-    "end). This is intended — content leaving view is part of a real camera "
-    "translation. It gives no monotone shortcut (correlation of cube area "
-    "with x is −0.07) and if anything makes adjacency harder, since frames "
-    "equidistant from the centre have similar cube area and thus compete to "
-    "be each other's nearest neighbour. Every case dir carries a `grid.png` "
-    "contact sheet (2×8, one still per sweep point in ladder order, labelled "
-    "with its camera x), written by the render step; case_00's copy is also "
-    "at `preview/translation_case_00_grid.png`.\n",
+    "### Effect of the re-framing\n",
+    "This family originally swept ±1.2 m in 0.16 m steps and let cubes leave "
+    "the frame near the extremes; it now sweeps ±0.55 m in 0.073 m steps with "
+    "every cube framed throughout. Same 10 seeds, same metric — mean nn l1 "
+    "before:\n",
+    table(["run"] + MODELS, TRANSLATION_V1_MEAN) + "\n",
+    "The step is less than half the size, so the naive expectation was that "
+    "every score would fall. Three rose instead: FastWAM-raw 0.68 → 1.00, "
+    "V-JEPA2-raw 0.75 → 0.93, Cosmos-raw held at 1.00. Two fell: Qwen-raw "
+    "0.99 → 0.71 and V-JEPA2-mean 0.97 → 0.63.\n",
+    "The likely reason the easier-looking version scored worse for some "
+    "models is that cubes leaving frame was itself the confound: visible cube "
+    "area then peaked mid-sweep and fell at both ends, so frames equidistant "
+    "from the centre resembled each other and competed to be one another's "
+    "nearest neighbour. Removing that leaves a clean 1-D viewpoint manifold, "
+    "which helps any model with fine spatial resolution — and FastWAM, which "
+    "sees only the final frame, benefits most. What it costs is coarse-cue "
+    "headroom: Qwen-raw and the pooled V-JEPA readout could track 0.16 m "
+    "shifts but cannot reliably resolve 0.073 m, so the re-framed family "
+    "measures spatial precision where the old one partly measured how much "
+    "of the scene was on screen.\n",
+    "Two models now saturate at 1.00, so this axis no longer separates the "
+    "top of the field; distinguishing Cosmos-raw from FastWAM-raw would need "
+    "a finer step or a harder scene.\n",
+    "Mean readouts other than V-JEPA's are not run for continuous evals. "
+    "Measured once on the original geometry, pooling cost them heavily on "
+    "this axis (Cosmos 1.00 raw → 0.12 mean, Qwen 0.99 → 0.41), as expected "
+    "for a spatial parameter. Those numbers are in git history.\n",
+
+    "**Framing:** the contract now proves numerically that every cube's "
+    "bounding corner clears the frame edge at both sweep extremes, and the "
+    "render was checked pixelwise — 0 of 160 frames have a cube touching an "
+    "edge, and visible cube area varies only 1.08× across a sweep (it was "
+    "1.62× before). Every case dir carries a `grid.png` contact sheet (2×8, "
+    "one still per sweep point in ladder order, labelled with its camera x), "
+    "written by the render step; case_00's copy is also at "
+    "`preview/translation_case_00_grid.png`.\n",
 ]
 
 pathlib.Path("RESULTS_continuous.md").write_text("\n".join(doc))
