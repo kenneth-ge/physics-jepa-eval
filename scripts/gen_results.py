@@ -56,6 +56,19 @@ BOUNCE_ADJ = [
     (2.00, [0.00, 0.12, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
 ]
 
+# --- deform ADJUSTED: cube still squashed in the last second; sweep k2/k1 -----
+# (deform HISTORY — same end image — is uniformly at/below chance, like void.)
+DEFORM_ADJ = [
+    (0.50, [0.00, 0.00, 0.38, 0.00, 1.00, 1.00, 1.00, 1.00]),
+    (0.70, [0.00, 0.00, 0.00, 0.00, 1.00, 1.00, 1.00, 1.00]),
+    (0.85, [0.00, 0.00, 0.00, 0.00, 0.75, 1.00, 1.00, 1.00]),
+    (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (1.20, [0.00, 0.00, 0.00, 0.00, 1.00, 1.00, 1.00, 1.00]),
+    (1.50, [0.00, 0.00, 0.00, 0.00, 1.00, 1.00, 1.00, 1.00]),
+    (1.75, [0.00, 0.00, 0.38, 0.12, 1.00, 1.00, 1.00, 1.00]),
+    (2.00, [0.00, 0.00, 0.25, 0.00, 1.00, 1.00, 1.00, 1.00]),
+]
+
 # --- bounce VOID: signal only in history; V-JEPA + Qwen only -----------------
 BOUNCE_VOID = [
     (0.50, [0.00, 0.00, 0.00, 0.00]), (0.70, [0.00, 0.00, 0.00, 0.00]),
@@ -113,6 +126,15 @@ doc.append("## bounce (adjusted) — rebound in the last second; A,B share drop 
            "point (B = A + 0.5s still prefix); sweep r2/r1 (r1=0.45; 1.00 = control C≡A)\n")
 doc.append(table(["factor"] + MODELS8,
                  [(f"{f:.2f}", v) for f, v in BOUNCE_ADJ]) + "\n")
+
+doc.append("## deform (adjusted) — material stiffness; cube still squashed in the "
+           "last second; sweep k2/k1 (1.00 = control C≡A)\n")
+doc.append(table(["factor"] + MODELS8,
+                 [(f"{f:.2f}", v) for f, v in DEFORM_ADJ]) + "\n")
+doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly; "
+           "whole-clip models (V-JEPA, Qwen) wash it out. deform (history) — same "
+           "end image, signal only in the squash history — is uniformly at/below "
+           "chance for every model (like bounce void).\n")
 
 doc.append("## bounce (void) — signal only in history (V-JEPA + Qwen), sweep r2/r1\n")
 doc.append(table(["factor", "VJEPA flat", "VJEPA mean", "Qwen flat", "Qwen mean"],
