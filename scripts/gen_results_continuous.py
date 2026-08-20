@@ -14,27 +14,30 @@ cell is therefore at or near chance, and only a near-perfect ladder is green.
 
 import pathlib
 
-MODELS8 = ["VJEPA raw", "VJEPA mean", "Qwen raw", "Qwen mean",
-           "Cosmos raw", "Cosmos mean", "FastWAM raw", "FastWAM mean"]
+# Readouts: raw for every model, plus V-JEPA's mean — the one model whose
+# mean-pooled readout beats its raw one, so it is worth carrying. The other
+# models' mean readouts are not run for continuous evals (they remain
+# registered encoders and are still used by the contrastive suite).
+MODELS = ["VJEPA raw", "VJEPA mean", "Qwen raw", "Cosmos raw", "FastWAM raw"]
 
 # --- translation: mean over 10 cases, one row per distance -------------------
 TRANSLATION_MEAN = [
-    ("nn cos", [0.714, 0.921, 0.979, 0.371, 1.000, 0.107, 0.643, 0.536]),
-    ("nn l1",  [0.750, 0.971, 0.986, 0.414, 1.000, 0.121, 0.679, 0.593]),
+    ("nn cos", [0.714, 0.921, 0.979, 1.000, 0.643]),
+    ("nn l1",  [0.750, 0.971, 0.986, 1.000, 0.679]),
 ]
 
 # --- translation per case (L1), 14 interior points each ----------------------
 TRANSLATION_CASES = [
-    ("case_00", [0.786, 1.000, 0.929, 0.357, 1.000, 0.071, 0.786, 0.786]),
-    ("case_01", [0.714, 1.000, 1.000, 0.571, 1.000, 0.214, 0.500, 0.429]),
-    ("case_02", [0.786, 1.000, 1.000, 0.357, 1.000, 0.286, 0.857, 0.786]),
-    ("case_03", [0.857, 0.929, 1.000, 0.571, 1.000, 0.071, 0.571, 0.429]),
-    ("case_04", [0.643, 1.000, 1.000, 0.357, 1.000, 0.071, 0.857, 0.714]),
-    ("case_05", [0.786, 0.929, 1.000, 0.500, 1.000, 0.143, 0.429, 0.429]),
-    ("case_06", [0.500, 1.000, 1.000, 0.357, 1.000, 0.000, 0.857, 0.786]),
-    ("case_07", [0.857, 1.000, 1.000, 0.357, 1.000, 0.143, 0.500, 0.429]),
-    ("case_08", [0.786, 1.000, 0.929, 0.357, 1.000, 0.143, 0.786, 0.571]),
-    ("case_09", [0.786, 0.857, 1.000, 0.357, 1.000, 0.071, 0.643, 0.571]),
+    ("case_00", [0.786, 1.000, 0.929, 1.000, 0.786]),
+    ("case_01", [0.714, 1.000, 1.000, 1.000, 0.500]),
+    ("case_02", [0.786, 1.000, 1.000, 1.000, 0.857]),
+    ("case_03", [0.857, 0.929, 1.000, 1.000, 0.571]),
+    ("case_04", [0.643, 1.000, 1.000, 1.000, 0.857]),
+    ("case_05", [0.786, 0.929, 1.000, 1.000, 0.429]),
+    ("case_06", [0.500, 1.000, 1.000, 1.000, 0.857]),
+    ("case_07", [0.857, 1.000, 1.000, 1.000, 0.500]),
+    ("case_08", [0.786, 1.000, 0.929, 1.000, 0.786]),
+    ("case_09", [0.786, 0.857, 1.000, 1.000, 0.643]),
 ]
 
 CHANCE = 1.0 / 105.0        # 1/C(15,2) for a 16-clip ladder
@@ -73,8 +76,9 @@ doc = [
     "embedding space should be exactly the clips right before and right after "
     "it. Cells are the fraction of interior clips where that holds, in cosine "
     "distance and L1. Scored by `evals.continuous.measure` on precomputed "
-    "`saved:` vectors. `raw` = unreduced vector, `mean` = mean-pooled "
-    "(the contrastive doc calls these `flat`/`mean`).\n",
+    "`saved:` vectors. `raw` = unreduced vector (the contrastive doc calls "
+    "this `flat`); `mean` = mean-pooled, carried for V-JEPA only, since it is "
+    "the one model whose pooled readout beats its raw one.\n",
     f"**Chance level is {CHANCE:.3f}** (1/C(N−1,2) for a 16-clip ladder), so "
     "shading ramps over the full 0–1 range — **red = at or near chance**, "
     "pale-yellow = 0.50, **green = near-perfect local ordering** — rather than "
@@ -92,25 +96,26 @@ doc = [
     "case, 140 across the family.\n",
 
     "### Mean over 10 cases\n",
-    table(["distance"] + MODELS8, TRANSLATION_MEAN) + "\n",
+    table(["distance"] + MODELS, TRANSLATION_MEAN) + "\n",
     "Cosine and L1 agree closely throughout, so the ranking is not an "
     "artifact of the distance choice.\n",
 
     "### Per case (L1)\n",
-    table(["case"] + MODELS8, TRANSLATION_CASES) + "\n",
+    table(["case"] + MODELS, TRANSLATION_CASES) + "\n",
 
-    "**Reading:** the raw, position-aligned readouts win this axis. "
-    "Cosmos-raw is perfect — 140/140 interior points under both distances — "
-    "and Qwen-raw nearly so: they embed the sweep as a clean 1-D curve in "
-    "which a single 0.16 m camera step is resolvable. Cosmos-mean collapses "
-    "to 0.12, barely above chance: mean-pooling discards the spatial detail "
-    "that localises viewpoint, leaving each clip's nearest neighbours "
-    "scattered among nearby rungs. Qwen-mean shows the same pooling penalty "
-    "less severely (0.41 vs 0.99 raw). V-JEPA2 is the one model whose mean "
-    "beats its raw (0.97 vs 0.75); its raw grid tokens shift with the "
-    "viewpoint, making adjacent-step distances jumpier than its pooled "
-    "readout. FastWAM sits mid-table on both readouts — expected, since it "
-    "sees only the final frame.\n",
+    "**Reading:** Cosmos-raw is perfect — 140/140 interior points under both "
+    "distances — and Qwen-raw nearly so (0.99): they embed the sweep as a "
+    "clean 1-D curve in which a single 0.16 m camera step is resolvable. "
+    "FastWAM-raw sits mid-table at 0.68, expected since it sees only the "
+    "final frame and so has the least to work with. V-JEPA2 is the model that "
+    "justifies keeping a pooled readout: its mean (0.97) clearly beats its "
+    "raw (0.75), because its raw grid tokens shift with the viewpoint and "
+    "make adjacent-step distances jumpier than the pooled vector does.\n",
+    "The other models' mean readouts are not run for continuous evals. They "
+    "were measured once on this family and pooling cost them heavily on this "
+    "axis (Cosmos 1.00 raw → 0.12 mean, Qwen 0.99 → 0.41), which is the "
+    "expected behaviour for a spatial parameter: mean-pooling discards the "
+    "detail that localises viewpoint. Those numbers are in git history.\n",
 
     "**Framing note:** cubes enter and leave the frame toward the sweep "
     "extremes (visible cube area peaks mid-sweep and falls ~1.6× at either "
