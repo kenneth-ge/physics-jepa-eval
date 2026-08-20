@@ -1,0 +1,76 @@
+name: kenny-rotation
+
+# Managed job: render the continuous `rotation` family (camera orbiting 180
+# degrees around a static multicolored-cube field, 10 cases x 16 azimuths)
+# with the stereo rig, encode every sweep clip with all four models in their
+# own venvs (serialized on one H200), then score 2-NN ladder adjacency from
+# the saved vectors.
+# Launch: sky jobs launch -n kenny-rotation -y jobs/continuous/rotation.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  # Default env: V-JEPA + rendering.
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy pillow
+  # Per-model venvs (all cached on the volume from prior runs -> fast).
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e   # one model failing must not abort the rest
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  ROOT=/data/videos/rotation
+  # Encode only the sweep clips (t_XX), not the stereo right-cam inputs.
+  CLIPS=$(printf 'r_%02d ' $(seq 0 15))
+
+  # Full regeneration: drop the previous render so no vectors from an older
+  # scene geometry survive alongside the new clips.
+  echo "=== render rotation (stereo) ==="
+  rm -rf $ROOT
+  python -m evals.continuous.rotation --out-root $ROOT --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $ROOT --encoders vjepa2_raw vjepa2_mean --clips $CLIPS
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --encoders qwen3vl_raw --clips $CLIPS
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $ROOT --encoders cosmos_raw --clips $CLIPS
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $ROOT --encoders fastwam_raw --clips $CLIPS
+  ) || echo "FASTWAM STEP FAILED"
+
+  echo "=== CONTINUOUS TABLES: rotation ==="
+  python -m evals.continuous.measure --root $ROOT --encoders \
+      saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw \
+      saved:cosmos_raw saved:fastwam_raw
