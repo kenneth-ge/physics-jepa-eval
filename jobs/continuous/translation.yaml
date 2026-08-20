@@ -43,7 +43,10 @@ run: |
   # Encode only the sweep clips (t_XX), not the stereo right-cam inputs.
   CLIPS=$(printf 't_%02d ' $(seq 0 15))
 
+  # Full regeneration: drop the previous render so no vectors from an older
+  # scene geometry survive alongside the new clips.
   echo "=== render translation (stereo) ==="
+  rm -rf $ROOT
   python -m evals.continuous.translation --out-root $ROOT --rig stereo
 
   echo "=== vjepa precompute ==="

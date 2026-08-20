@@ -38,13 +38,26 @@ from .grid import COLS as GRID_COLS, save_grid
 EVAL_IDS = list(range(10))
 SEED_BASE = 7100
 
+# Geometry is set so that EVERY cube stays fully framed at EVERY sweep point.
+# The camera trucks in x with a fixed orientation, so the visible x-window
+# slides with it and the usable placement box is the centre view shrunk by
+# CAM_X on each side. At the shared camera (y=-2.8, fovy 52, square frame) the
+# binding case is the nearest, tallest cube corner: the horizontal half-extent
+# there is ~1.23, so POS_BOX.x + CUBE_HALF*sqrt(2) + CAM_X must stay under it
+# with margin. That caps the sweep at ~±0.55 rather than the ±1.2 used before
+# (see `_view_margin` and the --check contract, which assert it numerically).
 N_POINTS = 16
-CAM_X = 1.2                  # sweep endpoints: x in [-CAM_X, +CAM_X]
+CAM_X = 0.55                 # sweep endpoints: x in [-CAM_X, +CAM_X]
 N_CUBES = (6, 10)            # cubes per case (inclusive range)
-CUBE_HALF = (0.09, 0.13)
-POS_BOX = dict(x=0.72, y=0.42)   # keeps cubes in view from BOTH sweep ends
-MIN_SEP = 0.36               # min cube center distance (no overlap/contact)
+CUBE_HALF = (0.07, 0.11)
+POS_BOX = dict(x=0.42, y=0.40)   # every cube in view from EVERY sweep point
+MIN_SEP = 0.32               # min cube center distance (no overlap/contact)
 MIN_HUE_GAP = 0.06           # min circular hue distance between any two cubes
+
+# Fixed-camera view geometry, used to prove the framing contract.
+FOVY_DEG = 52.0
+CAM_POS = DEFAULT_CAMERA["pos"]          # (x is overridden per sweep point)
+VIEW_MARGIN = 0.04           # world-units of slack demanded at the frame edge
 
 
 def sweep_xs():
@@ -85,10 +98,38 @@ def case_scene(i):
     return cubes
 
 
+def _forward():
+    right = np.array([1.0, 0.0, 0.0])
+    up = np.array(DEFAULT_CAMERA["xyaxes"][3:], float)
+    f = -np.cross(right, up)
+    return f / np.linalg.norm(f)
+
+
+def _view_margin(cube, dx):
+    """Signed horizontal slack (world units) between the cube's widest corner
+    and the frame edge, for a camera trucked to `dx`. Negative = clipped."""
+    fwd = _forward()
+    cam = np.array([dx, CAM_POS[1], CAM_POS[2]])
+    # widest/nearest corner: max horizontal reach of a yaw-rotated cube, at the
+    # nearest y and tallest z (both shrink the depth, hence the half-extent).
+    reach = cube["half"] * np.sqrt(2.0)
+    p = np.array([cube["pos"][0], cube["pos"][1] - reach, 2 * cube["half"]])
+    depth = float((p - cam) @ fwd)
+    half_extent = depth * np.tan(np.deg2rad(FOVY_DEG / 2))
+    return half_extent - (abs(cube["pos"][0] - dx) + reach)
+
+
 def check_contract(cubes):
     failures = []
     if len(cubes) < N_CUBES[0]:
         failures.append(f"only placed {len(cubes)} cubes (< {N_CUBES[0]})")
+    for k, c in enumerate(cubes):
+        for dx in (-CAM_X, CAM_X):     # extremes bound every interior point
+            m = _view_margin(c, dx)
+            if m < VIEW_MARGIN:
+                failures.append(
+                    f"cube {k} at x={c['pos'][0]:+.2f} is {m:+.3f} from the "
+                    f"frame edge at sweep x={dx:+.2f} (need ≥{VIEW_MARGIN})")
     for k, c in enumerate(cubes):
         if (abs(c["pos"][0]) > POS_BOX["x"] or abs(c["pos"][1]) > POS_BOX["y"]):
             failures.append(f"cube {k} out of box at {np.round(c['pos'], 3)}")
