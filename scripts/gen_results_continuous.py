@@ -40,6 +40,26 @@ TRANSLATION_CASES = [
     ("case_09", [0.929, 0.786, 0.714, 1.000, 1.000]),
 ]
 
+# --- rotation: mean over 10 cases, one row per distance (job 9472) -----------
+ROTATION_MEAN = [
+    ("nn cos", [0.614, 0.121, 0.757, 1.000, 0.900]),
+    ("nn l1",  [0.629, 0.171, 0.914, 1.000, 0.907]),
+]
+
+# --- rotation per case (L1) --------------------------------------------------
+ROTATION_CASES = [
+    ("case_00", [0.929, 0.143, 1.000, 1.000, 1.000]),
+    ("case_01", [0.857, 0.500, 1.000, 1.000, 0.929]),
+    ("case_02", [0.429, 0.143, 0.857, 1.000, 0.857]),
+    ("case_03", [0.643, 0.071, 0.643, 1.000, 0.714]),
+    ("case_04", [0.429, 0.143, 0.857, 1.000, 0.929]),
+    ("case_05", [0.429, 0.000, 0.929, 1.000, 1.000]),
+    ("case_06", [0.500, 0.214, 0.929, 1.000, 0.929]),
+    ("case_07", [0.643, 0.143, 1.000, 1.000, 1.000]),
+    ("case_08", [0.571, 0.071, 0.929, 1.000, 0.714]),
+    ("case_09", [0.857, 0.286, 1.000, 1.000, 1.000]),
+]
+
 # --- the same family before re-framing, for comparison (job 9055) ------------
 # sweep +/-1.2m (0.16m steps) with cubes allowed to leave frame at the extremes
 TRANSLATION_V1_MEAN = [
@@ -145,14 +165,53 @@ doc = [
     "this axis (Cosmos 1.00 raw → 0.12 mean, Qwen 0.99 → 0.41), as expected "
     "for a spatial parameter. Those numbers are in git history.\n",
 
-    "**Framing:** the contract now proves numerically that every cube's "
-    "bounding corner clears the frame edge at both sweep extremes, and the "
-    "render was checked pixelwise — 0 of 160 frames have a cube touching an "
-    "edge, and visible cube area varies only 1.08× across a sweep (it was "
-    "1.62× before). Every case dir carries a `grid.png` contact sheet (2×8, "
-    "one still per sweep point in ladder order, labelled with its camera x), "
-    "written by the render step; case_00's copy is also at "
-    "`preview/translation_case_00_grid.png`.\n",
+    "## rotation — 180° camera orbit\n",
+    "`evals.continuous.rotation` (job 9472). Same kind of static cube field "
+    "(6–10 cubes in a disc of radius 0.70), but the camera orbits a "
+    "semicircle at fixed radius 2.8, height 1.1 and look-at target: azimuth "
+    "−90…+90° in 16 steps of 12°, with azimuth 0 reproducing the shared front "
+    "camera. Only the viewing angle changes, so the field stays centred while "
+    "cubes swap depth order, occlude one another differently and turn "
+    "different faces to the camera. An infinite floor plane is used so the "
+    "finite floor's edge does not sweep the frame as an azimuth cue.\n",
+
+    "### Mean over 10 cases\n",
+    table(["distance"] + MODELS, ROTATION_MEAN) + "\n",
+    "### Per case (L1)\n",
+    table(["case"] + MODELS, ROTATION_CASES) + "\n",
+
+    "**Reading:** Cosmos-raw is again perfect, and the ordering broadly "
+    "matches translation — but the two families separate the middle of the "
+    "field differently. Qwen-raw *improves* on rotation (0.91 vs 0.71 on "
+    "translation) while V-JEPA2-raw *degrades* (0.63 vs 0.93), so the two "
+    "swap places: whatever Qwen encodes tracks angular viewpoint better than "
+    "fine lateral position, and V-JEPA's raw grid the reverse. FastWAM-raw "
+    "drops slightly off its translation ceiling (0.91 vs 1.00), which is "
+    "consistent with a single-frame spatial readout meeting a transformation "
+    "that changes occlusion and visible faces rather than merely shifting "
+    "content.\n",
+    "V-JEPA2-mean is the clear failure: 0.17, barely above the 0.010 chance "
+    "level, with three cases at or near zero. Pooling costs more here than on "
+    "translation (0.63), which fits — a rotation changes which cubes are "
+    "visible and how they overlap, and a mean-pooled vector keeps almost none "
+    "of the spatial arrangement needed to order those views.\n",
+    "Cosine and L1 diverge more on this family than on translation, most "
+    "visibly for Qwen-raw (0.76 cos vs 0.91 l1). Where the two disagree, the "
+    "ranking should be treated as softer than the single numbers suggest.\n",
+
+    "## Framing and contact sheets\n",
+    "Both families keep every cube fully in frame at every point on the "
+    "ladder. Each family's `--check` contract proves it numerically (the "
+    "cube's bounding corner must clear the frame edge by ≥0.04 world units at "
+    "every camera position), and both renders were verified pixelwise: 0 of "
+    "160 frames per family have a cube touching an edge. On translation, "
+    "visible cube area now varies only 1.08× across a sweep, down from 1.62× "
+    "when cubes were allowed to leave view.\n",
+    "Every case dir carries a `grid.png` contact sheet — 2×8, one still per "
+    "ladder point in order, labelled with its parameter value — written by "
+    "the render step. Copies of two are at "
+    "`preview/translation_case_00_grid.png` and "
+    "`preview/rotation_case_02_grid.png`.\n",
 ]
 
 pathlib.Path("RESULTS_continuous.md").write_text("\n".join(doc))

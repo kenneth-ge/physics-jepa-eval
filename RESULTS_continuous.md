@@ -61,4 +61,46 @@ Two models now saturate at 1.00, so this axis no longer separates the top of the
 
 Mean readouts other than V-JEPA's are not run for continuous evals. Measured once on the original geometry, pooling cost them heavily on this axis (Cosmos 1.00 raw → 0.12 mean, Qwen 0.99 → 0.41), as expected for a spatial parameter. Those numbers are in git history.
 
-**Framing:** the contract now proves numerically that every cube's bounding corner clears the frame edge at both sweep extremes, and the render was checked pixelwise — 0 of 160 frames have a cube touching an edge, and visible cube area varies only 1.08× across a sweep (it was 1.62× before). Every case dir carries a `grid.png` contact sheet (2×8, one still per sweep point in ladder order, labelled with its camera x), written by the render step; case_00's copy is also at `preview/translation_case_00_grid.png`.
+## rotation — 180° camera orbit
+
+`evals.continuous.rotation` (job 9472). Same kind of static cube field (6–10 cubes in a disc of radius 0.70), but the camera orbits a semicircle at fixed radius 2.8, height 1.1 and look-at target: azimuth −90…+90° in 16 steps of 12°, with azimuth 0 reproducing the shared front camera. Only the viewing angle changes, so the field stays centred while cubes swap depth order, occlude one another differently and turn different faces to the camera. An infinite floor plane is used so the finite floor's edge does not sweep the frame as an azimuth cue.
+
+### Mean over 10 cases
+
+<table>
+<thead><tr><th align="center">distance</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Cosmos raw</th><th align="center">FastWAM raw</th></tr></thead>
+<tbody>
+<tr><td><b>nn cos</b></td><td align="center" style="background:#cbe8a6;color:#0b0b0b">0.61</td><td align="center" style="background:#e1624c;color:#ffffff">0.12</td><td align="center" style="background:#89ca86;color:#0b0b0b">0.76</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#48ad66;color:#ffffff">0.90</td></tr>
+<tr><td><b>nn l1</b></td><td align="center" style="background:#c4e4a2;color:#0b0b0b">0.63</td><td align="center" style="background:#e5775b;color:#0b0b0b">0.17</td><td align="center" style="background:#41aa63;color:#ffffff">0.91</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#45ab65;color:#ffffff">0.91</td></tr>
+</tbody>
+</table>
+
+### Per case (L1)
+
+<table>
+<thead><tr><th align="center">case</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Cosmos raw</th><th align="center">FastWAM raw</th></tr></thead>
+<tbody>
+<tr><td><b>case_00</b></td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td></tr>
+<tr><td><b>case_01</b></td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td></tr>
+<tr><td><b>case_02</b></td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td></tr>
+<tr><td><b>case_03</b></td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td></tr>
+<tr><td><b>case_04</b></td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td></tr>
+<tr><td><b>case_05</b></td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#d73027;color:#ffffff">0.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td></tr>
+<tr><td><b>case_06</b></td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td></tr>
+<tr><td><b>case_07</b></td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td></tr>
+<tr><td><b>case_08</b></td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td></tr>
+<tr><td><b>case_09</b></td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td></tr>
+</tbody>
+</table>
+
+**Reading:** Cosmos-raw is again perfect, and the ordering broadly matches translation — but the two families separate the middle of the field differently. Qwen-raw *improves* on rotation (0.91 vs 0.71 on translation) while V-JEPA2-raw *degrades* (0.63 vs 0.93), so the two swap places: whatever Qwen encodes tracks angular viewpoint better than fine lateral position, and V-JEPA's raw grid the reverse. FastWAM-raw drops slightly off its translation ceiling (0.91 vs 1.00), which is consistent with a single-frame spatial readout meeting a transformation that changes occlusion and visible faces rather than merely shifting content.
+
+V-JEPA2-mean is the clear failure: 0.17, barely above the 0.010 chance level, with three cases at or near zero. Pooling costs more here than on translation (0.63), which fits — a rotation changes which cubes are visible and how they overlap, and a mean-pooled vector keeps almost none of the spatial arrangement needed to order those views.
+
+Cosine and L1 diverge more on this family than on translation, most visibly for Qwen-raw (0.76 cos vs 0.91 l1). Where the two disagree, the ranking should be treated as softer than the single numbers suggest.
+
+## Framing and contact sheets
+
+Both families keep every cube fully in frame at every point on the ladder. Each family's `--check` contract proves it numerically (the cube's bounding corner must clear the frame edge by ≥0.04 world units at every camera position), and both renders were verified pixelwise: 0 of 160 frames per family have a cube touching an edge. On translation, visible cube area now varies only 1.08× across a sweep, down from 1.62× when cubes were allowed to leave view.
+
+Every case dir carries a `grid.png` contact sheet — 2×8, one still per ladder point in order, labelled with its parameter value — written by the render step. Copies of two are at `preview/translation_case_00_grid.png` and `preview/rotation_case_02_grid.png`.
