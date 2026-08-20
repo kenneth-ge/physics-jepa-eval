@@ -8,12 +8,12 @@ Metrics (`evals.continuous.measure`, scored on precomputed `saved:` vectors):
   not readable from distances. No p-value is reported: the pairs are not
   independent (each clip appears in N−1 of them), so a textbook significance
   test would be badly anticonservative. Judge stability from the spread across
-  cases/seeds instead.
+  cases instead.
 - **nn** — ladder adjacency: fraction of interior clips (θ-sorted) whose two
   nearest embedding neighbors are exactly the clips right before and right
   after them. A local-topology check: stricter than ρ about ordering, and
   indifferent to global scale. Chance level is 1/C(N−1, 2) — **0.010** for a
-  16-clip ladder, **0.048** for an 8-clip one.
+  16-clip ladder.
 
 ## translation — horizontal camera sweep (10 cases, θ = camera x, 16 clips)
 
@@ -33,6 +33,10 @@ in lockstep). 120 pairs, 14 interior points per case. Mean over 10 cases:
 | Qwen3-VL mean | 0.37 | 0.41 | +0.70 | +0.70 |
 | Cosmos mean | 0.11 | 0.12 | +0.94 | +0.95 |
 
+Per-case ρ and nn are printed by `evals.continuous.measure`; the spread across
+the 10 cases is tight (e.g. Cosmos-raw nn = 1.00 in every case, V-JEPA2-raw
+nn l1 ranges 0.50–0.86).
+
 **Reading:** ρ is high for nearly everyone, so it barely discriminates here —
 a large camera gap means a large pixel gap, making global monotonicity cheap.
 Adjacency is the informative metric. Cosmos-raw is perfect (140/140 interior
@@ -46,48 +50,11 @@ rungs. V-JEPA is the one model whose mean beats its raw (0.97 vs 0.75); its
 raw grid tokens shift with the viewpoint, making adjacent-step distances
 jumpier than its pooled readout.
 
-## bounce — restitution ladder (8 seeds, θ = restitution 0.225–0.90, 8 clips)
-
-Adapted from the bounce-adjusted sweep (job 8913, still-prefix design) by
-`evals.continuous.from_bounce`: per seed the 7 non-control C clips
-(r2 = factor·r1) plus one A (r1 = 0.45 reference) form the ladder; the
-factor-1.00 control (C ≡ A) is excluded. Unevenly spaced, 28 pairs, only 6
-interior points per seed. Mean over 8 seeds:
-
-| model × readout | nn cos | nn l1 | ρ cos | ρ l1 |
-|---|---|---|---|---|
-| Qwen3-VL mean | **0.42** | **0.42** | +0.83 | +0.83 |
-| Cosmos mean | 0.33 | 0.40 | +0.81 | +0.86 |
-| Qwen3-VL raw | 0.08 | 0.13 | +0.64 | +0.67 |
-| Cosmos raw | 0.04 | 0.10 | +0.37 | +0.51 |
-| V-JEPA2 raw | 0.06 | 0.06 | +0.34 | +0.33 |
-| V-JEPA2 mean | 0.04 | 0.04 | +0.22 | +0.20 |
-| FastWAM raw | 0.02 | 0.04 | +0.43 | +0.44 |
-| FastWAM mean | 0.02 | 0.02 | +0.40 | +0.41 |
-
-**Reading:** the readout preference inverts relative to translation — here the
-**mean** readouts carry the signal (Qwen-mean and Cosmos-mean at ρ ≈ +0.85,
-nn ≈ 0.4 against 0.048 chance, i.e. ~8× chance), while every raw readout sits
-at or near chance on adjacency. Restitution is a magnitude cue (rebound height
-in the last-second window) that survives pooling, whereas camera x is a
-spatial cue that does not. Absolute nn is much lower than on translation for
-structural reasons as well as model ones: this ladder has 8 rungs rather than
-16, they are unevenly spaced (θ steps range 0.07–0.11), and neighbors are
-therefore closer together relative to the noise, so exact 2-NN adjacency is a
-harsh test. ρ remains the fairer summary for this family; nn is best read as a
-ranking of the models rather than an absolute score.
-
-## Cross-family finding
-
-The two ladders probe orthogonal axes and cleanly invert:
-
-| axis | family | winner |
-|---|---|---|
-| position / viewpoint | translation | **raw** (Cosmos-raw 1.00 nn) |
-| magnitude | bounce restitution | **mean** (Qwen/Cosmos-mean ρ ≈ +0.85) |
-
-No single readout serves both. Mean-pooling discards spatial location but
-retains magnitude; the position-aligned raw readouts do the reverse. The
-Cosmos pair makes this vivid: the same model is the best on translation
-(nn 1.00 raw) and among the best on bounce (mean), through *different*
-readouts, and each readout fails on the other family's axis.
+**Framing note:** cubes enter and leave the frame toward the sweep extremes
+(visible cube area peaks mid-sweep and falls ~1.6× at either end). This is
+intended — content leaving view is part of a real camera translation. It gives
+no monotone shortcut (correlation of cube area with x is −0.07) and if
+anything makes adjacency harder, since frames equidistant from the centre have
+similar cube area and thus compete to be each other's nearest neighbor.
+A contact sheet of case_00's 16 frames is at
+`preview/translation_case_00_grid.png`.
