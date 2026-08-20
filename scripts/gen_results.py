@@ -69,18 +69,6 @@ DEFORM_ADJ = [
     (2.00, [0.00, 0.00, 0.00, 0.00, 0.50, 1.00, 0.75, 0.75]),
 ]
 
-# --- pendulum: MASS via damped-swing dynamics; both end on the right; sweep m2/m
-PENDULUM = [
-    (0.50, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (0.70, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (0.85, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.20, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.50, [0.00, 0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 0.00]),
-    (1.75, [0.00, 0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 0.00]),
-    (2.00, [0.00, 0.00, 0.00, 0.00, 0.75, 0.38, 0.12, 0.12]),
-]
-
 # --- collision: MASS via momentum transfer; matched impact momentum; sweep m2/m
 COLLISION = [
     (0.50, [0.00, 0.00, 0.25, 0.00, 1.00, 1.00, 1.00, 1.00]),
@@ -159,14 +147,6 @@ doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly
            "whole-clip models (V-JEPA, Qwen) wash it out. deform (history) — same "
            "end image, signal only in the squash history — is uniformly at/below "
            "chance for every model (like bounce void).\n")
-
-doc.append("## pendulum — MASS via damped-swing dynamics; A/B/C all end on the "
-           "right; sweep m2/m (1.00 = control C≡A)\n")
-doc.append(table(["factor"] + MODELS8,
-                 [(f"{f:.2f}", v) for f, v in PENDULUM]) + "\n")
-doc.append("No model resolves mass from the swing: same-size ball, only density "
-           "differs, so the cue is a few degrees of damped amplitude — at/below "
-           "chance everywhere.\n")
 
 doc.append("## collision — MASS via momentum transfer; matched impact momentum "
            "(A,B) vs much heavier target (C); sweep m2/m (1.00 = control C≡A)\n")
