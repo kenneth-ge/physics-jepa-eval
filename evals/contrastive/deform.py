@@ -67,7 +67,7 @@ OMEGA_REF = 26.0
 
 VARIANTS = {
     "history":  dict(duration=1.9, decay=6.0, still=0.5),  # ball fully plunges
-    "adjusted": dict(duration=1.1, decay=2.0, still=0.5),  # squash still in window
+    "adjusted": dict(duration=1.05, decay=2.0, still=0.5),  # squash still in window
 }
 
 
@@ -140,7 +140,20 @@ def build_case(seed, factor, k1=None):
     return dict(k1=base, k2=factor * base)
 
 
-def _render_one(out_dir, k, name, still, p, rig, fps, size):
+def _static_frame(rig, size):
+    """One frame of the held release pose (ball at the throw point, cube nominal)."""
+    model = build_model(rig)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    cam_names = cameras.rig_cameras(rig)
+    cam_frames, _ = render_cams(model, data, cam_names=cam_names, n_frames=1,
+                               advance=lambda d, i: None, size=size)
+    return {c: f[0] for c, f in cam_frames.items()}
+
+
+def _sim_frames(k, p, rig, fps, size):
+    """Physics rollout for stiffness k; squash keyed to the ACTUAL ball impact.
+    Returns ({cam: [frames]}, final_ball_pos)."""
     model = build_model(rig)
     data = mujoco.MjData(model)
     data.qvel[0] = VX0                                   # angled inbound throw
@@ -151,8 +164,7 @@ def _render_one(out_dir, k, name, still, p, rig, fps, size):
     amp, omega = _squash_params(k)
     cam_names = cameras.rig_cameras(rig)
     spf = max(1, round(1.0 / (fps * model.opt.timestep)))
-    n_still = int(round(still * fps))
-    n_frames = n_still + int(round(p["duration"] * fps))
+    n_frames = int(round(p["duration"] * fps))
     state = {"t_impact": None}
 
     def hit_pad(d):
@@ -163,15 +175,10 @@ def _render_one(out_dir, k, name, still, p, rig, fps, size):
         return False
 
     def advance(d, i):
-        if i < n_still:
-            mujoco.mj_forward(model, d)                  # ball held at release pt
-        else:
-            if i == n_still:
-                d.qacc_warmstart[:] = 0
-            for _ in range(spf):
-                mujoco.mj_step(model, d)
-                if state["t_impact"] is None and hit_pad(d):
-                    state["t_impact"] = d.time
+        for _ in range(spf):
+            mujoco.mj_step(model, d)
+            if state["t_impact"] is None and hit_pad(d):
+                state["t_impact"] = d.time
         dt = -1.0 if state["t_impact"] is None else d.time - state["t_impact"]
         sx, sy, sz = cube_size(dt, amp, omega, p["decay"])
         model.geom_size[vis_gid] = (sx, sy, sz)
@@ -179,15 +186,20 @@ def _render_one(out_dir, k, name, still, p, rig, fps, size):
 
     cam_frames, _ = render_cams(model, data, cam_names=cam_names,
                                n_frames=n_frames, advance=advance, size=size)
-    if out_dir is not None:
-        write_observations(out_dir, name, cam_frames, fps)
-    return data.qpos[0:3].copy()
+    return cam_frames, data.qpos[0:3].copy()
 
 
 def render_case(out_dir, meta, *, variant="history", rig="mono", fps=FPS, size=256):
+    # A,B share stiffness k1 (B = A + a still prefix, so its motion is IDENTICAL,
+    # not a re-sim — the edge bounce is chaotic); C has stiffness k2.
     p = VARIANTS[variant]
-    variants = {"A": (meta["k1"], 0.0),
-                "B": (meta["k1"], p["still"]),
-                "C": (meta["k2"], 0.0)}
-    return {name: _render_one(out_dir, k, name, still, p, rig, fps, size)
-            for name, (k, still) in variants.items()}
+    n_still = int(round(p["still"] * fps))
+    still = _static_frame(rig, size)
+    framesA, posA = _sim_frames(meta["k1"], p, rig, fps, size)
+    framesC, posC = _sim_frames(meta["k2"], p, rig, fps, size)
+    framesB = {c: [still[c]] * n_still + framesA[c] for c in framesA}
+    if out_dir is not None:
+        write_observations(out_dir, "A", framesA, fps)
+        write_observations(out_dir, "B", framesB, fps)
+        write_observations(out_dir, "C", framesC, fps)
+    return {"A": posA, "B": posA, "C": posC}
