@@ -14,6 +14,12 @@ contrastive suite's pass/fail is the special case of comparing just three
 pairs. If the manifest names a "ref" clip we also report rho_ref over the
 distances from ref only (N-1 pairs), which isolates one-vs-all monotonicity.
 
+We also report NEIGHBOR ADJACENCY (nn_cos / nn_l1): sort the clips by theta;
+for every interior clip, its two nearest neighbors in embedding space should
+be exactly the clips right before and right after it on the ladder. The score
+is the fraction of interior clips where that holds — a local-topology check
+that is stricter than rho about ordering but indifferent to global scale.
+
 As with the contrastive suite, exit code is 0 unless there is an error: the
 goal is mapping where distance tracks the parameter, not gating on it.
 
@@ -64,9 +70,24 @@ def spearman(x, y):
     return float(rx @ ry / denom) if denom > 0 else 0.0
 
 
+def neighbor_acc(vecs, thetas, dist_fn):
+    """Fraction of interior clips (theta-sorted) whose two nearest embedding
+    neighbors are exactly the ladder-adjacent clips."""
+    order = list(np.argsort(thetas))
+    if len(order) < 3:
+        return float("nan")
+    hits = 0
+    for k in range(1, len(order) - 1):
+        i = order[k]
+        dists = sorted((dist_fn(vecs[i], vecs[j]), j)
+                       for j in range(len(vecs)) if j != i)
+        hits += {j for _, j in dists[:2]} == {order[k - 1], order[k + 1]}
+    return hits / (len(order) - 2)
+
+
 def measure_case(case_dir, encoders):
-    """Returns {encoder_name: {"rho_cos", "rho_l1", "rho_ref_cos",
-    "rho_ref_l1", "n_clips"}} for one case dir with a manifest."""
+    """Returns {encoder_name: {"rho_cos", "rho_l1", "nn_cos", "nn_l1",
+    "rho_ref_cos", "rho_ref_l1", "n_clips"}} for one case dir with a manifest."""
     man = read_manifest(case_dir)
     clips = man["clips"]
     ref = man.get("ref")
@@ -82,6 +103,8 @@ def measure_case(case_dir, encoders):
         res = {
             "rho_cos": spearman(gaps, dcos),
             "rho_l1": spearman(gaps, dl1),
+            "nn_cos": neighbor_acc(vecs, thetas, _cos_dist),
+            "nn_l1": neighbor_acc(vecs, thetas, _l1),
             "n_clips": len(clips),
         }
         if ref is not None:
@@ -96,12 +119,11 @@ def measure_case(case_dir, encoders):
     return results
 
 
-def print_summary(root_name, per_case, enc_names):
-    cols = [(e, m) for e in enc_names for m in ("rho_cos", "rho_l1")]
+def print_summary(root_name, per_case, enc_names, metric="rho", title=""):
+    cols = [(e, f"{metric}_{m}") for e in enc_names for m in ("cos", "l1")]
     header = "".join(f"{e.split(':')[-1][:9]+'_'+m.split('_')[-1]:>14}"
                      for e, m in cols)
-    print(f"\n===== continuous summary: {root_name} "
-          f"(Spearman |dtheta| vs embedding distance, +1 = tracks) =====")
+    print(f"\n===== continuous {metric}: {root_name} {title} =====")
     print(f"{'case':<20}{header}")
     for case, res in per_case.items():
         row = "".join(f"{res[e][m]:>+14.3f}" for e, m in cols)
@@ -139,9 +161,14 @@ def main():
             ref = (f"   ref cos {r['rho_ref_cos']:+.3f} l1 {r['rho_ref_l1']:+.3f}"
                    if "rho_ref_cos" in r else "")
             print(f"[{key} :: {name}] n={r['n_clips']} "
-                  f"rho cos {r['rho_cos']:+.3f} l1 {r['rho_l1']:+.3f}{ref}")
-    print_summary((args.root or args.case).name, per_case,
-                  [n for n, _ in encoders])
+                  f"rho cos {r['rho_cos']:+.3f} l1 {r['rho_l1']:+.3f} "
+                  f"nn cos {r['nn_cos']:.2f} l1 {r['nn_l1']:.2f}{ref}")
+    enc_names = [n for n, _ in encoders]
+    root_name = (args.root or args.case).name
+    print_summary(root_name, per_case, enc_names, metric="rho",
+                  title="(Spearman |dtheta| vs embedding distance, +1 = tracks)")
+    print_summary(root_name, per_case, enc_names, metric="nn",
+                  title="(frac. interior clips whose 2 embedding-NN = ladder neighbors)")
 
 
 if __name__ == "__main__":
