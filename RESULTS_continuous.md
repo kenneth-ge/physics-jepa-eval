@@ -1,82 +1,93 @@
 # Continuous paradigm results
 
-Metrics (`evals.continuous.measure`, on precomputed `saved:` vectors):
-- **ρ** — Spearman between parameter gap |Δθ| and embedding distance over all
-  clip pairs (cos = cosine distance, l1 = L1). +1 = distance tracks the
-  parameter monotonically; 0 = parameter not readable from distances.
+Metrics (`evals.continuous.measure`, scored on precomputed `saved:` vectors):
+
+- **ρ** — Spearman correlation between the parameter gap |Δθ| and the embedding
+  distance, over all clip pairs in a case (cos = cosine distance, l1 = L1).
+  +1 = distance grows monotonically with the parameter; 0 = the parameter is
+  not readable from distances. No p-value is reported: the pairs are not
+  independent (each clip appears in N−1 of them), so a textbook significance
+  test would be badly anticonservative. Judge stability from the spread across
+  cases/seeds instead.
 - **nn** — ladder adjacency: fraction of interior clips (θ-sorted) whose two
   nearest embedding neighbors are exactly the clips right before and right
-  after them on the ladder. Local-topology check; stricter than ρ about
-  ordering, indifferent to global scale.
+  after them. A local-topology check: stricter than ρ about ordering, and
+  indifferent to global scale. Chance level is 1/C(N−1, 2) — **0.010** for a
+  16-clip ladder, **0.048** for an 8-clip one.
 
-## translation — horizontal camera sweep (10 cases, θ = camera x, 16 points)
+## translation — horizontal camera sweep (10 cases, θ = camera x, 16 clips)
 
-Purpose-built family (`evals.continuous.translation`, job 9055 / kenny-translation):
-one static field of 6–10 multicolored rotated cubes per case, camera trucked
-x = −1.2…+1.2 (step 0.16 m), stereo rig in lockstep. Mean over 10 cases:
+`evals.continuous.translation` (job 9055). One static field of 6–10
+multicolored rotated cubes per case; the camera trucks x = −1.2…+1.2 in 16
+even steps of 0.16 m (orientation, height and distance fixed; stereo rig moves
+in lockstep). 120 pairs, 14 interior points per case. Mean over 10 cases:
 
 | model × readout | nn cos | nn l1 | ρ cos | ρ l1 |
 |---|---|---|---|---|
 | Cosmos raw | **1.00** | **1.00** | +0.96 | +0.98 |
-| Qwen3-VL raw | **0.98** | **0.99** | +0.95 | +0.92 |
+| Qwen3-VL raw | 0.98 | 0.99 | +0.95 | +0.93 |
 | V-JEPA2 mean | 0.92 | 0.97 | +0.96 | +0.94 |
-| V-JEPA2 raw | 0.71 | 0.75 | +0.96 | +0.95 |
-| FastWAM raw | 0.64 | 0.68 | +0.95 | +0.95 |
-| FastWAM mean | 0.54 | 0.59 | +0.94 | +0.94 |
+| V-JEPA2 raw | 0.71 | 0.75 | +0.96 | +0.96 |
+| FastWAM raw | 0.64 | 0.68 | +0.96 | +0.96 |
+| FastWAM mean | 0.54 | 0.59 | +0.94 | +0.95 |
 | Qwen3-VL mean | 0.37 | 0.41 | +0.70 | +0.70 |
-| Cosmos mean | **0.11** | **0.12** | +0.94 | +0.95 |
+| Cosmos mean | 0.11 | 0.12 | +0.94 | +0.95 |
 
-**Reading:** ρ is high for nearly everyone — big viewpoint gaps produce big
-pixel/embedding gaps, so global monotonicity is cheap here. The adjacency
-metric is the discriminative one. Cosmos-raw is perfect (140/140 interior
+**Reading:** ρ is high for nearly everyone, so it barely discriminates here —
+a large camera gap means a large pixel gap, making global monotonicity cheap.
+Adjacency is the informative metric. Cosmos-raw is perfect (140/140 interior
 points, both distances) and Qwen-raw nearly so: their position-aligned raw
-readouts embed the sweep as a clean 1-D curve where a 0.16 m camera step is
-resolvable. Cosmos-mean is the headline dissociation: ρ +0.95 but nn ≈ 0.11 —
-mean-pooling keeps the coarse ordering yet destroys local viewpoint
-resolution, so a clip's nearest neighbors are effectively shuffled among
-nearby rungs. This is the continuous-paradigm signature of the contrastive
-`basic_position` finding (raw passes, mean fails: Qwen-mean 21/30,
-Cosmos-mean 22/23): translation is a position axis, and it inverts the bounce
-ladder (a magnitude axis) where mean ≫ raw. V-JEPA is the exception whose
-mean beats its raw (0.97 vs 0.75 l1) — its raw grid tokens shift with the
-viewpoint, making adjacent-step distances jumpier than its pooled readout.
+readouts embed the sweep as a clean 1-D curve in which a single 0.16 m step is
+resolvable. Cosmos-mean is the sharp dissociation — ρ +0.95 but nn 0.12
+(against 0.010 chance, so above chance but far from ordered): pooling
+preserves the coarse global ordering while destroying the local viewpoint
+resolution, leaving each clip's nearest neighbors scattered among nearby
+rungs. V-JEPA is the one model whose mean beats its raw (0.97 vs 0.75); its
+raw grid tokens shift with the viewpoint, making adjacent-step distances
+jumpier than its pooled readout.
 
-## bounce — restitution ladder (8 seeds, θ = restitution 0.225–0.90 + ref 0.45)
+## bounce — restitution ladder (8 seeds, θ = restitution 0.225–0.90, 8 clips)
 
-Adapted from the contrastive bounce-adjusted sweep (job 8913, still-prefix
-design) via `evals.continuous.from_bounce`: per seed, the 7 non-control C
-clips (r2 = factor·r1) + one A (r1 ref) form an 8-clip ladder; factor 1.00
-control excluded. 28 pairs per case. Mean ρ across seeds:
+Adapted from the bounce-adjusted sweep (job 8913, still-prefix design) by
+`evals.continuous.from_bounce`: per seed the 7 non-control C clips
+(r2 = factor·r1) plus one A (r1 = 0.45 reference) form the ladder; the
+factor-1.00 control (C ≡ A) is excluded. Unevenly spaced, 28 pairs, only 6
+interior points per seed. Mean over 8 seeds:
 
-| model × readout | ρ cos | ρ l1 |
+| model × readout | nn cos | nn l1 | ρ cos | ρ l1 |
+|---|---|---|---|---|
+| Qwen3-VL mean | **0.42** | **0.42** | +0.83 | +0.83 |
+| Cosmos mean | 0.33 | 0.40 | +0.81 | +0.86 |
+| Qwen3-VL raw | 0.08 | 0.13 | +0.64 | +0.67 |
+| Cosmos raw | 0.04 | 0.10 | +0.37 | +0.51 |
+| V-JEPA2 raw | 0.06 | 0.06 | +0.34 | +0.33 |
+| V-JEPA2 mean | 0.04 | 0.04 | +0.22 | +0.20 |
+| FastWAM raw | 0.02 | 0.04 | +0.43 | +0.44 |
+| FastWAM mean | 0.02 | 0.02 | +0.40 | +0.41 |
+
+**Reading:** the readout preference inverts relative to translation — here the
+**mean** readouts carry the signal (Qwen-mean and Cosmos-mean at ρ ≈ +0.85,
+nn ≈ 0.4 against 0.048 chance, i.e. ~8× chance), while every raw readout sits
+at or near chance on adjacency. Restitution is a magnitude cue (rebound height
+in the last-second window) that survives pooling, whereas camera x is a
+spatial cue that does not. Absolute nn is much lower than on translation for
+structural reasons as well as model ones: this ladder has 8 rungs rather than
+16, they are unevenly spaced (θ steps range 0.07–0.11), and neighbors are
+therefore closer together relative to the noise, so exact 2-NN adjacency is a
+harsh test. ρ remains the fairer summary for this family; nn is best read as a
+ranking of the models rather than an absolute score.
+
+## Cross-family finding
+
+The two ladders probe orthogonal axes and cleanly invert:
+
+| axis | family | winner |
 |---|---|---|
-| V-JEPA2 raw | +0.34 | +0.33 |
-| V-JEPA2 mean | +0.22 | +0.20 |
-| Qwen3-VL raw | +0.63 | +0.66 |
-| Qwen3-VL mean | **+0.84** | **+0.84** |
-| Cosmos raw | +0.36 | +0.50 |
-| Cosmos mean | **+0.82** | **+0.86** |
-| FastWAM raw | +0.42 | +0.42 |
-| FastWAM mean | +0.39 | +0.39 |
+| position / viewpoint | translation | **raw** (Cosmos-raw 1.00 nn) |
+| magnitude | bounce restitution | **mean** (Qwen/Cosmos-mean ρ ≈ +0.85) |
 
-Per-seed ρ (l1):
-
-| seed | vjepa2_raw | vjepa2_mean | qwen_raw | qwen_mean | cosmos_raw | cosmos_mean | fastwam_raw | fastwam_mean |
-|---|---|---|---|---|---|---|---|---|
-| 0 | +0.28 | +0.12 | +0.64 | +0.85 | +0.54 | +0.82 | +0.45 | +0.39 |
-| 1 | +0.41 | +0.30 | +0.67 | +0.75 | +0.50 | +0.83 | +0.43 | +0.35 |
-| 2 | +0.41 | +0.22 | +0.71 | +0.87 | +0.52 | +0.88 | +0.50 | +0.46 |
-| 3 | +0.29 | +0.33 | +0.66 | +0.83 | +0.52 | +0.85 | +0.36 | +0.30 |
-| 4 | +0.36 | +0.08 | +0.65 | +0.90 | +0.42 | +0.90 | +0.40 | +0.41 |
-| 5 | +0.29 | +0.12 | +0.62 | +0.82 | +0.46 | +0.89 | +0.45 | +0.44 |
-| 6 | +0.24 | +0.12 | +0.74 | +0.79 | +0.53 | +0.88 | +0.43 | +0.47 |
-| 7 | +0.38 | +0.27 | +0.59 | +0.89 | +0.48 | +0.84 | +0.34 | +0.34 |
-
-**Reading:** Qwen-mean and Cosmos-mean carry a strong continuous restitution
-signal (ρ ≈ +0.84); their raw readouts are markedly weaker — restitution here
-is a magnitude cue (rebound height in the last-second window), which
-mean-pooling keeps and position-aligned raw dilutes. FastWAM sits at ρ ≈ +0.4
-both readouts; V-JEPA2 is weakest (mean ρ ≈ +0.2), consistent with its late
-contrastive breakpoint on the bounce sweep. The continuous eval grades what
-the contrastive one thresholds: instead of "at which factor does the triplet
-flip", ρ measures how faithfully the whole restitution axis is embedded.
+No single readout serves both. Mean-pooling discards spatial location but
+retains magnitude; the position-aligned raw readouts do the reverse. The
+Cosmos pair makes this vivid: the same model is the best on translation
+(nn 1.00 raw) and among the best on bounce (mean), through *different*
+readouts, and each readout fails on the other family's axis.
