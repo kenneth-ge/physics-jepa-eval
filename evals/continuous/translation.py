@@ -10,8 +10,7 @@ varies along the ladder.
 
 The target invariant is local: for every interior sweep point, its two nearest
 neighbors in embedding space should be the clips rendered right before and
-right after it (`nn_cos` / `nn_l1` in evals.continuous.measure), with the
-global Spearman rho(|dx|, distance) reported alongside.
+right after it (`nn_cos` / `nn_l1` in evals.continuous.measure).
 
 Contract (--check): cameras strictly increasing and evenly spaced (adjacent
 points are theta-NN by construction), cubes inside the shared view of all

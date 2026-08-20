@@ -2,26 +2,19 @@
 
 Each case dir holds N clips at parameter values theta (declared in
 manifest.json, see evals/common/manifest.py) and each encoder is a black box:
-video file -> one 1-D vector. For every encoder and every unordered clip pair
-(i, j) we compute the embedding distance (cosine distance and L1) and score
+video file -> one 1-D vector. The metric is NEIGHBOR ADJACENCY: sort the clips
+by theta; for every interior clip, its two nearest neighbors in embedding
+space should be exactly the clips right before and right after it on the
+ladder. The score (nn_cos / nn_l1, one per distance) is the fraction of
+interior clips where that holds, reported for both cosine distance and L1.
 
-  rho = Spearman( |theta_i - theta_j| ,  d(emb_i, emb_j) )
+Chance level is 1/C(N-1, 2) — 0.010 for a 16-clip ladder — since a clip's two
+nearest neighbors could be any unordered pair drawn from the other N-1 clips.
 
-over all pairs. rho ~ +1 means embedding distance grows monotonically with the
-physical parameter gap (the encoder resolves the parameter continuously);
-rho ~ 0 means the parameter is not linearly readable from distances; the
-contrastive suite's pass/fail is the special case of comparing just three
-pairs. If the manifest names a "ref" clip we also report rho_ref over the
-distances from ref only (N-1 pairs), which isolates one-vs-all monotonicity.
-
-We also report NEIGHBOR ADJACENCY (nn_cos / nn_l1): sort the clips by theta;
-for every interior clip, its two nearest neighbors in embedding space should
-be exactly the clips right before and right after it on the ladder. The score
-is the fraction of interior clips where that holds — a local-topology check
-that is stricter than rho about ordering but indifferent to global scale.
-
+Adjacency is a local-topology test: it asks whether the encoder resolves one
+step along the parameter, not merely whether far-apart clips look far apart.
 As with the contrastive suite, exit code is 0 unless there is an error: the
-goal is mapping where distance tracks the parameter, not gating on it.
+goal is mapping where local structure survives, not gating on it.
 
 Usage:
   python -m evals.continuous.measure --root <dir of case subdirs> \
@@ -29,7 +22,6 @@ Usage:
 """
 
 import argparse
-import itertools
 import pathlib
 
 import numpy as np
@@ -44,36 +36,6 @@ def _cos_dist(a, b):
 
 def _l1(a, b):
     return float(np.abs(a - b).sum())
-
-
-def _rank(x, rtol=1e-9):
-    """Average ranks, no scipy dependency. Values within rtol of the running
-    tie-block head count as tied: an evenly spaced theta ladder produces gaps
-    that are equal in exact arithmetic but differ in the last float bits, and
-    treating those as distinct injects arbitrary rank noise (biases rho down
-    by a few thousandths)."""
-    x = np.asarray(x, dtype=float)
-    scale = np.max(np.abs(x)) or 1.0
-    tol = rtol * scale
-    order = np.argsort(x, kind="stable")
-    ranks = np.empty(len(x))
-    sx = x[order]
-    i = 0
-    while i < len(sx):
-        j = i
-        while j + 1 < len(sx) and abs(sx[j + 1] - sx[i]) <= tol:
-            j += 1
-        ranks[order[i:j + 1]] = (i + j) / 2.0
-        i = j + 1
-    return ranks
-
-
-def spearman(x, y):
-    rx, ry = _rank(x), _rank(y)
-    rx -= rx.mean()
-    ry -= ry.mean()
-    denom = np.sqrt((rx @ rx) * (ry @ ry))
-    return float(rx @ ry / denom) if denom > 0 else 0.0
 
 
 def neighbor_acc(vecs, thetas, dist_fn):
@@ -92,51 +54,34 @@ def neighbor_acc(vecs, thetas, dist_fn):
 
 
 def measure_case(case_dir, encoders):
-    """Returns {encoder_name: {"rho_cos", "rho_l1", "nn_cos", "nn_l1",
-    "rho_ref_cos", "rho_ref_l1", "n_clips"}} for one case dir with a manifest."""
-    man = read_manifest(case_dir)
-    clips = man["clips"]
-    ref = man.get("ref")
+    """Returns {encoder_name: {"nn_cos", "nn_l1", "n_clips"}} for one case dir
+    with a manifest."""
+    clips = read_manifest(case_dir)["clips"]
     results = {}
     for name, enc in encoders:
         vecs = [np.asarray(enc.encode(case_dir / c["file"])) for c in clips]
         thetas = [float(c["theta"]) for c in clips]
-        gaps, dcos, dl1 = [], [], []
-        for i, j in itertools.combinations(range(len(clips)), 2):
-            gaps.append(abs(thetas[i] - thetas[j]))
-            dcos.append(_cos_dist(vecs[i], vecs[j]))
-            dl1.append(_l1(vecs[i], vecs[j]))
-        res = {
-            "rho_cos": spearman(gaps, dcos),
-            "rho_l1": spearman(gaps, dl1),
+        results[name] = {
             "nn_cos": neighbor_acc(vecs, thetas, _cos_dist),
             "nn_l1": neighbor_acc(vecs, thetas, _l1),
             "n_clips": len(clips),
         }
-        if ref is not None:
-            r = next(k for k, c in enumerate(clips) if c["file"] == ref)
-            others = [k for k in range(len(clips)) if k != r]
-            rg = [abs(thetas[k] - thetas[r]) for k in others]
-            res["rho_ref_cos"] = spearman(
-                rg, [_cos_dist(vecs[k], vecs[r]) for k in others])
-            res["rho_ref_l1"] = spearman(
-                rg, [_l1(vecs[k], vecs[r]) for k in others])
-        results[name] = res
     return results
 
 
-def print_summary(root_name, per_case, enc_names, metric="rho", title=""):
-    cols = [(e, f"{metric}_{m}") for e in enc_names for m in ("cos", "l1")]
+def print_summary(root_name, per_case, enc_names):
+    cols = [(e, f"nn_{m}") for e in enc_names for m in ("cos", "l1")]
     header = "".join(f"{e.split(':')[-1][:9]+'_'+m.split('_')[-1]:>14}"
                      for e, m in cols)
-    print(f"\n===== continuous {metric}: {root_name} {title} =====")
+    print(f"\n===== continuous nn: {root_name} "
+          f"(frac. interior clips whose 2 embedding-NN = ladder neighbors) =====")
     print(f"{'case':<20}{header}")
     for case, res in per_case.items():
-        row = "".join(f"{res[e][m]:>+14.3f}" for e, m in cols)
+        row = "".join(f"{res[e][m]:>14.3f}" for e, m in cols)
         print(f"{case:<20}{row}")
     n = len(per_case)
     means = "".join(
-        f"{np.mean([per_case[c][e][m] for c in per_case]):>+14.3f}"
+        f"{np.mean([per_case[c][e][m] for c in per_case]):>14.3f}"
         for e, m in cols)
     print(f"{'MEAN '+str(n):<20}{means}")
 
@@ -164,17 +109,10 @@ def main():
         per_case[key] = res
         for name, _ in encoders:
             r = res[name]
-            ref = (f"   ref cos {r['rho_ref_cos']:+.3f} l1 {r['rho_ref_l1']:+.3f}"
-                   if "rho_ref_cos" in r else "")
             print(f"[{key} :: {name}] n={r['n_clips']} "
-                  f"rho cos {r['rho_cos']:+.3f} l1 {r['rho_l1']:+.3f} "
-                  f"nn cos {r['nn_cos']:.2f} l1 {r['nn_l1']:.2f}{ref}")
-    enc_names = [n for n, _ in encoders]
-    root_name = (args.root or args.case).name
-    print_summary(root_name, per_case, enc_names, metric="rho",
-                  title="(Spearman |dtheta| vs embedding distance, +1 = tracks)")
-    print_summary(root_name, per_case, enc_names, metric="nn",
-                  title="(frac. interior clips whose 2 embedding-NN = ladder neighbors)")
+                  f"nn cos {r['nn_cos']:.2f} l1 {r['nn_l1']:.2f}")
+    print_summary((args.root or args.case).name, per_case,
+                  [n for n, _ in encoders])
 
 
 if __name__ == "__main__":

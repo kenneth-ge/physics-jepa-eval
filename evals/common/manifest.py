@@ -6,8 +6,7 @@ reads clip -> theta without parsing filenames:
 
   {"param": "restitution", "clips": [{"file": "theta_00.mp4", "theta": 0.45}, ...]}
 
-Optional keys: "ref" (filename of the reference clip, if the family has one),
-plus anything family-specific — readers ignore unknown keys.
+Anything family-specific may be added alongside — readers ignore unknown keys.
 """
 
 import json
