@@ -46,16 +46,22 @@ def _l1(a, b):
     return float(np.abs(a - b).sum())
 
 
-def _rank(x):
-    """Average ranks (ties averaged), no scipy dependency."""
+def _rank(x, rtol=1e-9):
+    """Average ranks, no scipy dependency. Values within rtol of the running
+    tie-block head count as tied: an evenly spaced theta ladder produces gaps
+    that are equal in exact arithmetic but differ in the last float bits, and
+    treating those as distinct injects arbitrary rank noise (biases rho down
+    by a few thousandths)."""
     x = np.asarray(x, dtype=float)
+    scale = np.max(np.abs(x)) or 1.0
+    tol = rtol * scale
     order = np.argsort(x, kind="stable")
     ranks = np.empty(len(x))
     sx = x[order]
     i = 0
     while i < len(sx):
         j = i
-        while j + 1 < len(sx) and sx[j + 1] == sx[i]:
+        while j + 1 < len(sx) and abs(sx[j + 1] - sx[i]) <= tol:
             j += 1
         ranks[order[i:j + 1]] = (i + j) / 2.0
         i = j + 1
