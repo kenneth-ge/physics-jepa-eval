@@ -1,10 +1,45 @@
 # Continuous paradigm results
 
-Metric: Spearman ρ between parameter gap |Δθ| and embedding distance over all
-clip pairs in a case (`evals.continuous.measure`; cos = cosine distance,
-l1 = L1). +1 = embedding distance tracks the physical parameter monotonically;
-0 = parameter not readable from distances. Scored on precomputed `saved:`
-vectors — same clips and embeddings as the contrastive tables.
+Metrics (`evals.continuous.measure`, on precomputed `saved:` vectors):
+- **ρ** — Spearman between parameter gap |Δθ| and embedding distance over all
+  clip pairs (cos = cosine distance, l1 = L1). +1 = distance tracks the
+  parameter monotonically; 0 = parameter not readable from distances.
+- **nn** — ladder adjacency: fraction of interior clips (θ-sorted) whose two
+  nearest embedding neighbors are exactly the clips right before and right
+  after them on the ladder. Local-topology check; stricter than ρ about
+  ordering, indifferent to global scale.
+
+## translation — horizontal camera sweep (10 cases, θ = camera x, 16 points)
+
+Purpose-built family (`evals.continuous.translation`, job 9055 / kenny-translation):
+one static field of 6–10 multicolored rotated cubes per case, camera trucked
+x = −1.2…+1.2 (step 0.16 m), stereo rig in lockstep. Mean over 10 cases:
+
+| model × readout | nn cos | nn l1 | ρ cos | ρ l1 |
+|---|---|---|---|---|
+| Cosmos raw | **1.00** | **1.00** | +0.96 | +0.98 |
+| Qwen3-VL raw | **0.98** | **0.99** | +0.95 | +0.92 |
+| V-JEPA2 mean | 0.92 | 0.97 | +0.96 | +0.94 |
+| V-JEPA2 raw | 0.71 | 0.75 | +0.96 | +0.95 |
+| FastWAM raw | 0.64 | 0.68 | +0.95 | +0.95 |
+| FastWAM mean | 0.54 | 0.59 | +0.94 | +0.94 |
+| Qwen3-VL mean | 0.37 | 0.41 | +0.70 | +0.70 |
+| Cosmos mean | **0.11** | **0.12** | +0.94 | +0.95 |
+
+**Reading:** ρ is high for nearly everyone — big viewpoint gaps produce big
+pixel/embedding gaps, so global monotonicity is cheap here. The adjacency
+metric is the discriminative one. Cosmos-raw is perfect (140/140 interior
+points, both distances) and Qwen-raw nearly so: their position-aligned raw
+readouts embed the sweep as a clean 1-D curve where a 0.16 m camera step is
+resolvable. Cosmos-mean is the headline dissociation: ρ +0.95 but nn ≈ 0.11 —
+mean-pooling keeps the coarse ordering yet destroys local viewpoint
+resolution, so a clip's nearest neighbors are effectively shuffled among
+nearby rungs. This is the continuous-paradigm signature of the contrastive
+`basic_position` finding (raw passes, mean fails: Qwen-mean 21/30,
+Cosmos-mean 22/23): translation is a position axis, and it inverts the bounce
+ladder (a magnitude axis) where mean ≫ raw. V-JEPA is the exception whose
+mean beats its raw (0.97 vs 0.75 l1) — its raw grid tokens shift with the
+viewpoint, making adjacent-step distances jumpier than its pooled readout.
 
 ## bounce — restitution ladder (8 seeds, θ = restitution 0.225–0.90 + ref 0.45)
 
