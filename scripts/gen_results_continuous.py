@@ -88,6 +88,13 @@ doc = [
     "step along the parameter, not merely whether far-apart clips look far "
     "apart.\n",
 
+    "> ⚠️ **Stale — numbers below are from the previous scene geometry** "
+    "(sweep ±1.2 m, 0.16 m steps, cubes allowed to leave frame). The family "
+    "was changed so every cube stays framed at every sweep point, which "
+    "required shrinking the sweep to ±0.55 m (0.073 m steps); job "
+    "`kenny-translation-v2` is re-rendering and re-scoring. This table will be "
+    "replaced when it lands.\n",
+
     "## translation — horizontal camera sweep\n",
     "`evals.continuous.translation` (job 9055). 10 cases; each is one static "
     "field of 6–10 multicoloured rotated cubes, with the camera trucked "
