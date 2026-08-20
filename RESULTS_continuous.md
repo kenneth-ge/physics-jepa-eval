@@ -1,57 +1,45 @@
 # Continuous paradigm results
 
-Metric (`evals.continuous.measure`, scored on precomputed `saved:` vectors):
+Metric: **ladder adjacency (nn)** — sort a case's clips by the swept parameter θ; for every interior clip, its two nearest neighbours in embedding space should be exactly the clips right before and right after it. Cells are the fraction of interior clips where that holds, in cosine distance and L1. Scored by `evals.continuous.measure` on precomputed `saved:` vectors. `raw` = unreduced vector, `mean` = mean-pooled (the contrastive doc calls these `flat`/`mean`).
 
-- **nn** — ladder adjacency: sort a case's clips by the swept parameter θ; for
-  every interior clip, its two nearest neighbors in embedding space should be
-  exactly the clips right before and right after it. The score is the fraction
-  of interior clips where that holds, reported for cosine distance (`nn cos`)
-  and L1 (`nn l1`).
-- **Chance level** is 1/C(N−1, 2) — **0.010** for a 16-clip ladder — since a
-  clip's two nearest neighbors could be any unordered pair of the other N−1.
+**Chance level is 0.010** (1/C(N−1,2) for a 16-clip ladder), so shading ramps over the full 0–1 range — **red = at or near chance**, pale-yellow = 0.50, **green = near-perfect local ordering** — rather than diverging around chance as the contrastive tables do. The value is printed in every cell.
 
-Adjacency is a local test: it asks whether the encoder resolves a single step
-along the parameter, not merely whether far-apart clips look far apart.
+Adjacency is a local test: it asks whether the encoder resolves a single step along the parameter, not merely whether far-apart clips look far apart.
 
-## translation — horizontal camera sweep (10 cases, θ = camera x, 16 clips)
+## translation — horizontal camera sweep
 
-`evals.continuous.translation` (job 9055). One static field of 6–10
-multicolored rotated cubes per case; the camera trucks x = −1.2…+1.2 in 16
-even steps of 0.16 m (orientation, height and distance fixed; stereo rig moves
-in lockstep). 14 interior points per case, 140 across the family.
+`evals.continuous.translation` (job 9055). 10 cases; each is one static field of 6–10 multicoloured rotated cubes, with the camera trucked x = −1.2…+1.2 in 16 even steps of 0.16 m (orientation, height and distance fixed; stereo rig moves in lockstep). 14 interior points per case, 140 across the family.
 
-| model × readout | nn cos | nn l1 |
-|---|---|---|
-| Cosmos raw | **1.00** | **1.00** |
-| Qwen3-VL raw | 0.98 | 0.99 |
-| V-JEPA2 mean | 0.92 | 0.97 |
-| V-JEPA2 raw | 0.71 | 0.75 |
-| FastWAM raw | 0.64 | 0.68 |
-| FastWAM mean | 0.54 | 0.59 |
-| Qwen3-VL mean | 0.37 | 0.41 |
-| Cosmos mean | 0.11 | 0.12 |
+### Mean over 10 cases
 
-Cosine and L1 agree closely throughout, so the ranking is not an artifact of
-the distance choice. Spread across the 10 cases is tight (Cosmos-raw is 1.00
-in every case; V-JEPA2-raw nn l1 ranges 0.50–0.86).
+<table>
+<thead><tr><th align="center">distance</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Qwen mean</th><th align="center">Cosmos raw</th><th align="center">Cosmos mean</th><th align="center">FastWAM raw</th><th align="center">FastWAM mean</th></tr></thead>
+<tbody>
+<tr><td><b>nn cos</b></td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td><td align="center" style="background:#3ea862;color:#ffffff">0.92</td><td align="center" style="background:#249c55;color:#ffffff">0.98</td><td align="center" style="background:#f5ca98;color:#0b0b0b">0.37</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e05c48;color:#ffffff">0.11</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#eff8b7;color:#0b0b0b">0.54</td></tr>
+<tr><td><b>nn l1</b></td><td align="center" style="background:#8ccc88;color:#0b0b0b">0.75</td><td align="center" style="background:#279e56;color:#ffffff">0.97</td><td align="center" style="background:#209b53;color:#ffffff">0.99</td><td align="center" style="background:#f8dba5;color:#0b0b0b">0.41</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e1624c;color:#ffffff">0.12</td><td align="center" style="background:#adda97;color:#0b0b0b">0.68</td><td align="center" style="background:#d4ecaa;color:#0b0b0b">0.59</td></tr>
+</tbody>
+</table>
 
-**Reading:** the raw, position-aligned readouts win this axis. Cosmos-raw is
-perfect — 140/140 interior points under both distances — and Qwen-raw nearly
-so: they embed the sweep as a clean 1-D curve in which a single 0.16 m camera
-step is resolvable. Cosmos-mean collapses to 0.11 (barely above the 0.010
-chance level): mean-pooling discards the spatial detail that localizes
-viewpoint, leaving each clip's nearest neighbors scattered among nearby rungs.
-Qwen-mean shows the same pooling penalty less severely (0.41 vs 0.98 raw).
-V-JEPA2 is the one model whose mean beats its raw (0.97 vs 0.75); its raw grid
-tokens shift with the viewpoint, making adjacent-step distances jumpier than
-its pooled readout. FastWAM sits mid-table on both readouts — expected, since
-it sees only the final frame and so has the least to work with.
+Cosine and L1 agree closely throughout, so the ranking is not an artifact of the distance choice.
 
-**Framing note:** cubes enter and leave the frame toward the sweep extremes
-(visible cube area peaks mid-sweep and falls ~1.6× at either end). This is
-intended — content leaving view is part of a real camera translation. It gives
-no monotone shortcut (correlation of cube area with x is −0.07) and if
-anything makes adjacency harder, since frames equidistant from the centre have
-similar cube area and thus compete to be each other's nearest neighbor.
-A contact sheet of case_00's 16 frames is at
-`preview/translation_case_00_grid.png`.
+### Per case (L1)
+
+<table>
+<thead><tr><th align="center">case</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Qwen mean</th><th align="center">Cosmos raw</th><th align="center">Cosmos mean</th><th align="center">FastWAM raw</th><th align="center">FastWAM mean</th></tr></thead>
+<tbody>
+<tr><td><b>case_00</b></td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td></tr>
+<tr><td><b>case_01</b></td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td></tr>
+<tr><td><b>case_02</b></td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td></tr>
+<tr><td><b>case_03</b></td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td></tr>
+<tr><td><b>case_04</b></td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td></tr>
+<tr><td><b>case_05</b></td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td></tr>
+<tr><td><b>case_06</b></td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#d73027;color:#ffffff">0.00</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td></tr>
+<tr><td><b>case_07</b></td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td></tr>
+<tr><td><b>case_08</b></td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#3ba760;color:#ffffff">0.93</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td></tr>
+<tr><td><b>case_09</b></td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#5bb570;color:#0b0b0b">0.86</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#1a9850;color:#ffffff">1.00</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td></tr>
+</tbody>
+</table>
+
+**Reading:** the raw, position-aligned readouts win this axis. Cosmos-raw is perfect — 140/140 interior points under both distances — and Qwen-raw nearly so: they embed the sweep as a clean 1-D curve in which a single 0.16 m camera step is resolvable. Cosmos-mean collapses to 0.12, barely above chance: mean-pooling discards the spatial detail that localises viewpoint, leaving each clip's nearest neighbours scattered among nearby rungs. Qwen-mean shows the same pooling penalty less severely (0.41 vs 0.99 raw). V-JEPA2 is the one model whose mean beats its raw (0.97 vs 0.75); its raw grid tokens shift with the viewpoint, making adjacent-step distances jumpier than its pooled readout. FastWAM sits mid-table on both readouts — expected, since it sees only the final frame.
+
+**Framing note:** cubes enter and leave the frame toward the sweep extremes (visible cube area peaks mid-sweep and falls ~1.6× at either end). This is intended — content leaving view is part of a real camera translation. It gives no monotone shortcut (correlation of cube area with x is −0.07) and if anything makes adjacency harder, since frames equidistant from the centre have similar cube area and thus compete to be each other's nearest neighbour. A contact sheet of case_00's 16 frames is at `preview/translation_case_00_grid.png`.
