@@ -1,0 +1,68 @@
+name: kenny-mass
+
+# Mass-sensitivity evals (pendulum + collision), all 4 models — self-contained
+# (renders + precomputes + prints per-factor sweep tables to the job log).
+#   sky jobs launch -n kenny-mass -y jobs/contrastive/mass.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  PEND=/data/videos/pendulum
+  COLL=/data/videos/collision
+  rm -rf $PEND $COLL
+  ENC="saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean"
+
+  echo "=== render pendulum (stereo) ==="
+  python -m evals.contrastive.render_pendulum --out-root $PEND --seeds 8 --rig stereo
+  echo "=== render collision (stereo) ==="
+  python -m evals.contrastive.render_collision --out-root $COLL --seeds 8 --rig stereo
+
+  # Each model loaded ONCE, precomputes BOTH roots (--clips A B C skips right-cam clips).
+  echo "=== vjepa precompute ==="
+  for R in $PEND $COLL; do python -m evals.precompute --root $R --recursive --clips A B C --encoders vjepa2_raw vjepa2_mean; done
+
+  ( source /data/qwen/venv/bin/activate
+    for R in $PEND $COLL; do echo "=== qwen $R ==="; python -m evals.precompute --root $R --recursive --clips A B C --encoders qwen3vl_raw qwen3vl_mean; done
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    for R in $PEND $COLL; do echo "=== cosmos $R ==="; python -m evals.precompute --root $R --recursive --clips A B C --encoders cosmos_raw cosmos_mean; done
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    for R in $PEND $COLL; do echo "=== fastwam $R ==="; python -m evals.precompute --root $R --recursive --clips A B C --encoders fastwam_raw fastwam_mean; done
+
+    echo "=== PENDULUM SWEEP TABLE (mass via damped swing; ends on right) ==="
+    python -m evals.contrastive.aggregate_bounce --root $PEND --encoders $ENC
+    echo "=== COLLISION SWEEP TABLE (mass via momentum transfer) ==="
+    python -m evals.contrastive.aggregate_bounce --root $COLL --encoders $ENC
+  ) || echo "FASTWAM/AGG STEP FAILED"
