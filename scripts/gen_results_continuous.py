@@ -60,6 +60,26 @@ ROTATION_CASES = [
     ("case_09", [0.857, 0.286, 1.000, 1.000, 1.000]),
 ]
 
+# --- velocity: mean over 10 cases (job 9552) ---------------------------------
+VELOCITY_MEAN = [
+    ("nn cos", [0.357, 0.421, 0.529, 0.164, 0.036]),
+    ("nn l1",  [0.407, 0.464, 0.593, 0.221, 0.064]),
+]
+
+# --- velocity per case (L1) ---------------------------------------------------
+VELOCITY_CASES = [
+    ("case_00", [0.714, 0.500, 0.571, 0.214, 0.143]),
+    ("case_01", [0.143, 0.286, 0.786, 0.357, 0.000]),
+    ("case_02", [0.286, 0.643, 0.643, 0.286, 0.143]),
+    ("case_03", [0.286, 0.429, 0.571, 0.143, 0.071]),
+    ("case_04", [0.357, 0.429, 0.500, 0.071, 0.000]),
+    ("case_05", [0.214, 0.500, 0.429, 0.214, 0.000]),
+    ("case_06", [0.500, 0.286, 0.500, 0.214, 0.071]),
+    ("case_07", [0.643, 0.643, 0.714, 0.214, 0.071]),
+    ("case_08", [0.500, 0.500, 0.714, 0.214, 0.071]),
+    ("case_09", [0.429, 0.429, 0.500, 0.286, 0.071]),
+]
+
 # --- the same family before re-framing, for comparison (job 9055) ------------
 # sweep +/-1.2m (0.16m steps) with cubes allowed to leave frame at the extremes
 TRANSLATION_V1_MEAN = [
@@ -198,6 +218,31 @@ doc = [
     "Cosine and L1 diverge more on this family than on translation, most "
     "visibly for Qwen-raw (0.76 cos vs 0.91 l1). Where the two disagree, the "
     "ranking should be treated as softer than the single numbers suggest.\n",
+
+    "## velocity — rolling-ball speed sweep\n",
+    "`evals.continuous.velocity` (job 9552). 10 cases; each is one ball "
+    "rolling along x at constant speed on flat ground, θ = speed swept "
+    "0.10…0.70 m/s in 16 even 0.04 m/s rungs, fixed 2.0 s duration. Every "
+    "rung ends at the same per-case point E (start = E − v·T), so the final "
+    "position is controlled out and θ is carried by motion alone: a "
+    "final-frame representation sees all 16 rungs alike. Cases vary roll "
+    "direction (5/5), endpoint, lateral offset and ball hue.\n",
+    "### Mean over 10 cases\n",
+    table(["distance"] + MODELS, VELOCITY_MEAN) + "\n",
+    "### Per case (L1)\n",
+    table(["case"] + MODELS, VELOCITY_CASES) + "\n",
+    "**Reading:** the ranking follows each model's input window, which is "
+    "exactly what the design predicts. FastWAM (last frame only) is at the "
+    "floor (0.04/0.06) *by construction* — the final frames are identical "
+    "across rungs — and Cosmos (last ~5 frames) manages only 0.16/0.22 from "
+    "the short position-trace its window sees. The whole-clip models lead: "
+    "Qwen-raw 0.53/0.59, then V-JEPA2 — whose pooled readout beats its raw "
+    "grid here (0.42/0.46 vs 0.36/0.41), echoing the contrastive roll "
+    "finding that pooling helps on motion axes where raw position "
+    "alignment is a distraction. The axis inverts translation's ranking "
+    "(Cosmos 1.00 → 0.16, FastWAM 1.00 → 0.04): speed and viewpoint are "
+    "separable capabilities, and no model comes near saturation, so this "
+    "family has headroom the re-framed translation lacks.\n",
 
     "## Framing and contact sheets\n",
     "Both families keep every cube fully in frame at every point on the "

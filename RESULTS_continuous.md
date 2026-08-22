@@ -99,6 +99,40 @@ V-JEPA2-mean is the clear failure: 0.17, barely above the 0.010 chance level, wi
 
 Cosine and L1 diverge more on this family than on translation, most visibly for Qwen-raw (0.76 cos vs 0.91 l1). Where the two disagree, the ranking should be treated as softer than the single numbers suggest.
 
+## velocity — rolling-ball speed sweep
+
+`evals.continuous.velocity` (job 9552). 10 cases; each is one ball rolling along x at constant speed on flat ground, θ = speed swept 0.10…0.70 m/s in 16 even 0.04 m/s rungs, fixed 2.0 s duration. Every rung ends at the same per-case point E (start = E − v·T), so the final position is controlled out and θ is carried by motion alone: a final-frame representation sees all 16 rungs alike. Cases vary roll direction (5/5), endpoint, lateral offset and ball hue.
+
+### Mean over 10 cases
+
+<table>
+<thead><tr><th align="center">distance</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Cosmos raw</th><th align="center">FastWAM raw</th></tr></thead>
+<tbody>
+<tr><td><b>nn cos</b></td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#f9dea7;color:#0b0b0b">0.42</td><td align="center" style="background:#f2f9b9;color:#0b0b0b">0.53</td><td align="center" style="background:#e47459;color:#0b0b0b">0.16</td><td align="center" style="background:#da3f32;color:#ffffff">0.04</td></tr>
+<tr><td><b>nn l1</b></td><td align="center" style="background:#f8d8a3;color:#0b0b0b">0.41</td><td align="center" style="background:#fcf0b4;color:#0b0b0b">0.46</td><td align="center" style="background:#d4ecaa;color:#0b0b0b">0.59</td><td align="center" style="background:#e98b6a;color:#0b0b0b">0.22</td><td align="center" style="background:#dc4a3a;color:#ffffff">0.06</td></tr>
+</tbody>
+</table>
+
+### Per case (L1)
+
+<table>
+<thead><tr><th align="center">case</th><th align="center">VJEPA raw</th><th align="center">VJEPA mean</th><th align="center">Qwen raw</th><th align="center">Cosmos raw</th><th align="center">FastWAM raw</th></tr></thead>
+<tbody>
+<tr><td><b>case_00</b></td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td></tr>
+<tr><td><b>case_01</b></td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#7cc480;color:#0b0b0b">0.79</td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#d73027;color:#ffffff">0.00</td></tr>
+<tr><td><b>case_02</b></td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td></tr>
+<tr><td><b>case_03</b></td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#def0af;color:#0b0b0b">0.57</td><td align="center" style="background:#e26b52;color:#ffffff">0.14</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td></tr>
+<tr><td><b>case_04</b></td><td align="center" style="background:#f4c494;color:#0b0b0b">0.36</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#d73027;color:#ffffff">0.00</td></tr>
+<tr><td><b>case_05</b></td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#d73027;color:#ffffff">0.00</td></tr>
+<tr><td><b>case_06</b></td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td></tr>
+<tr><td><b>case_07</b></td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#bee29f;color:#0b0b0b">0.64</td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td></tr>
+<tr><td><b>case_08</b></td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#9dd38f;color:#0b0b0b">0.71</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td></tr>
+<tr><td><b>case_09</b></td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#f9e2a9;color:#0b0b0b">0.43</td><td align="center" style="background:#ffffbf;color:#0b0b0b">0.50</td><td align="center" style="background:#eea67e;color:#0b0b0b">0.29</td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td></tr>
+</tbody>
+</table>
+
+**Reading:** the ranking follows each model's input window, which is exactly what the design predicts. FastWAM (last frame only) is at the floor (0.04/0.06) *by construction* — the final frames are identical across rungs — and Cosmos (last ~5 frames) manages only 0.16/0.22 from the short position-trace its window sees. The whole-clip models lead: Qwen-raw 0.53/0.59, then V-JEPA2 — whose pooled readout beats its raw grid here (0.42/0.46 vs 0.36/0.41), echoing the contrastive roll finding that pooling helps on motion axes where raw position alignment is a distraction. The axis inverts translation's ranking (Cosmos 1.00 → 0.16, FastWAM 1.00 → 0.04): speed and viewpoint are separable capabilities, and no model comes near saturation, so this family has headroom the re-framed translation lacks.
+
 ## Framing and contact sheets
 
 Both families keep every cube fully in frame at every point on the ladder. Each family's `--check` contract proves it numerically (the cube's bounding corner must clear the frame edge by ≥0.04 world units at every camera position), and both renders were verified pixelwise: 0 of 160 frames per family have a cube touching an edge. On translation, visible cube area now varies only 1.08× across a sweep, down from 1.62× when cubes were allowed to leave view.

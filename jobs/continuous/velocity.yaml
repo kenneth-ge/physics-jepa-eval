@@ -1,0 +1,84 @@
+name: kenny-velocity
+
+# Managed job: render the continuous `velocity` family (one ball rolling at
+# 16 speeds toward a shared per-case endpoint, theta = speed) with the stereo
+# rig, encode the sweep clips with the four standard models (raw readouts +
+# vjepa2_mean, per the continuous readout policy) AND the six PFM ladder
+# checkpoints, then score 2-NN ladder adjacency from the saved vectors.
+# Launch: sky jobs launch -n kenny-velocity -y jobs/continuous/velocity.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  # Default env: V-JEPA + rendering + PFM (DINOv3 via timm + local trunks).
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy pillow timm
+  # Per-model venvs (all cached on the volume from prior runs -> fast).
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e   # one model failing must not abort the rest
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  ROOT=/data/videos/velocity
+  CLIPS=$(printf 'v_%02d ' $(seq 0 15))
+  PFME="pfm_worst_raw pfm_worst_mean pfm_low_raw pfm_low_mean \
+        pfm_middle_raw pfm_middle_mean pfm_best_raw pfm_best_mean \
+        pfm_f16_raw pfm_f16_mean pfm_f4_raw pfm_f4_mean"
+
+  # Full regeneration: drop any previous render so no stale vectors survive.
+  echo "=== render velocity (stereo) ==="
+  rm -rf $ROOT
+  python -m evals.continuous.velocity --out-root $ROOT --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $ROOT --encoders vjepa2_raw vjepa2_mean --clips $CLIPS
+
+  echo "=== pfm ladder precompute ==="
+  python -m evals.precompute --root $ROOT --encoders $PFME --clips $CLIPS
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --encoders qwen3vl_raw --clips $CLIPS
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $ROOT --encoders cosmos_raw --clips $CLIPS
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $ROOT --encoders fastwam_raw --clips $CLIPS
+  ) || echo "FASTWAM STEP FAILED"
+
+  echo "=== CONTINUOUS TABLES: velocity (standard models) ==="
+  python -m evals.continuous.measure --root $ROOT --encoders \
+      saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw \
+      saved:cosmos_raw saved:fastwam_raw
+
+  echo "=== CONTINUOUS TABLES: velocity (PFM ladder) ==="
+  python -m evals.continuous.measure --root $ROOT --encoders \
+      $(for e in $PFME; do printf 'saved:%s ' $e; done)
