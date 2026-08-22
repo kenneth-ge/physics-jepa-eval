@@ -1,0 +1,79 @@
+name: kenny-pfm-ladder
+
+# PFM checkpoint-ladder eval: encode EVERY eval family (contrastive +
+# continuous) with all six pfm-latent-eval-ladder checkpoints (worst/low/
+# middle/best + F16/F4 controls, see evals/encoders/pfm.py) and print the
+# standard tables per role. The question is inverted from our usual runs:
+# checkpoint quality is known by construction, and we score whether each
+# EVAL recovers the worst<low<middle<best ordering.
+#
+# No rendering: reads the existing clips under /data/videos. Everything runs
+# in the default env (DINOv3-S via ungated timm re-host + the 199M trunks);
+# checkpoints live at /data/pfm/pfm-latent-eval-ladder-checkpoints.
+#   sky jobs launch -n kenny-pfm-ladder -y jobs/pfm_ladder.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q timm "imageio[ffmpeg]" numpy
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  PFME="pfm_worst_raw pfm_worst_mean pfm_low_raw pfm_low_mean \
+        pfm_middle_raw pfm_middle_mean pfm_best_raw pfm_best_mean \
+        pfm_f16_raw pfm_f16_mean pfm_f4_raw pfm_f4_mean"
+  SAVED=$(for e in $PFME; do printf 'saved:%s ' $e; done)
+
+  # --- precompute: one invocation per root; all 12 encoders share the ---
+  # --- in-process DINOv3 token cache, trunks stay loaded across roles ---
+  for R in bowl cube basic_color basic_position roll occlusion; do
+    echo "=== pfm precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips A B C --encoders $PFME
+  done
+  for R in counting_sweep count2_sweep bounce_sweep bounce_void collision \
+           deform_adjusted deform_history; do
+    echo "=== pfm precompute $R (recursive) ==="
+    python -m evals.precompute --root /data/videos/$R --recursive --clips A B C --encoders $PFME
+  done
+  echo "=== pfm precompute translation ==="
+  python -m evals.precompute --root /data/videos/translation \
+      --clips $(printf 't_%02d ' $(seq 0 15)) --encoders $PFME
+  echo "=== pfm precompute rotation ==="
+  python -m evals.precompute --root /data/videos/rotation \
+      --clips $(printf 'r_%02d ' $(seq 0 15)) --encoders $PFME
+
+  # --- standard tables per family ---
+  for R in bowl cube basic_color basic_position roll occlusion; do
+    echo "=== PFM TABLE: $R ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $SAVED
+  done
+  for R in counting_sweep count2_sweep; do
+    echo "=== PFM TABLE: $R ==="
+    python -m evals.contrastive.aggregate_counting --root /data/videos/$R --encoders $SAVED
+  done
+  for R in bounce_sweep bounce_void collision deform_adjusted deform_history; do
+    echo "=== PFM TABLE: $R ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $SAVED
+  done
+  for R in translation rotation; do
+    echo "=== PFM TABLE (continuous): $R ==="
+    python -m evals.continuous.measure --root /data/videos/$R --encoders $SAVED
+  done

@@ -31,6 +31,11 @@ def _cosmos(readout):
     return CosmosEncoder(readout)
 
 
+def _pfm(role, readout):
+    from .pfm import PFMEncoder
+    return PFMEncoder(role, readout)
+
+
 # name -> zero-arg factory. Each model runs in its own env; vjepa2 shares the
 # default env, the rest feed `measure` via `saved:<tag>` (see precompute.py).
 _REGISTRY = {
@@ -43,6 +48,13 @@ _REGISTRY = {
     "cosmos_raw": lambda: _cosmos("raw"),
     "cosmos_mean": lambda: _cosmos("mean"),
 }
+
+# PFM checkpoint ladder (see pfm.py): pfm_{role}_{raw,mean} for the six
+# manifest roles. All share one DINOv3 tokenizer cache in-process.
+for _role in ("worst", "low", "middle", "best", "f16", "f4"):
+    for _ro in ("raw", "mean"):
+        _REGISTRY[f"pfm_{_role}_{_ro}"] = (
+            lambda r=_role, o=_ro: _pfm(r, o))
 
 DEFAULT_ENCODERS = ["vjepa2_raw", "vjepa2_mean"]
 
