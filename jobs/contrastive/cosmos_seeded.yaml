@@ -1,0 +1,71 @@
+name: kenny-cosmos-seeded
+
+# Re-encode Cosmos with the FIXED-SEED generator (evals/encoders/cosmos.py:
+# unseeded diffusion init noise differed per encode, so cosmos_raw distances
+# carried a noise floor that mean-pooling averaged away). Re-runs the
+# magnitude sweeps where cosmos_raw collapsed (bounce, collision, deform x2)
+# + basic_position as a spatial no-regression check, then reprints tables.
+#   sky jobs launch -n kenny-cosmos-seeded -y jobs/contrastive/cosmos_seeded.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+  bash scripts/setup_cosmos.sh
+
+run: |
+  set +e
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== determinism check (same clip twice, must be identical) ==="
+    V=$(find /data/videos/bounce_sweep -name A.mp4 | head -1)
+    PYTHONPATH=. python scripts/check_encoder_determinism.py cosmos_raw "$V"
+    echo "=== pred smoke test (one clip) ==="
+    PYTHONPATH=. python scripts/check_encoder_determinism.py cosmos_pred_raw "$V"
+
+    # two passes so a pred failure can't take down the seeded raw/mean redo
+    for R in bounce_sweep collision deform_adjusted deform_history; do
+      echo "=== cosmos precompute $R (recursive, seeded) ==="
+      python -m evals.precompute --root /data/videos/$R --recursive \
+          --clips A B C --encoders cosmos_raw cosmos_mean
+    done
+    echo "=== cosmos precompute basic_position (seeded) ==="
+    python -m evals.precompute --root /data/videos/basic_position \
+        --clips A B C --encoders cosmos_raw cosmos_mean
+    ( for R in bounce_sweep collision deform_adjusted deform_history; do
+        echo "=== cosmos precompute $R (pred) ==="
+        python -m evals.precompute --root /data/videos/$R --recursive \
+            --clips A B C --encoders cosmos_pred_raw cosmos_pred_mean
+      done
+      echo "=== cosmos precompute basic_position (pred) ==="
+      python -m evals.precompute --root /data/videos/basic_position \
+          --clips A B C --encoders cosmos_pred_raw cosmos_pred_mean
+    ) || echo "PRED PASS FAILED (seeded raw/mean unaffected)"
+  ) || echo "COSMOS STEP FAILED"
+
+  ENC="saved:cosmos_raw saved:cosmos_mean"
+  ENCP="$ENC saved:cosmos_pred_raw saved:cosmos_pred_mean"
+  for R in bounce_sweep collision deform_adjusted deform_history; do
+    echo "=== TABLE: $R (cosmos seeded) ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENCP || \
+      python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+  done
+  echo "=== TABLE: basic_position (cosmos seeded) ==="
+  python -m evals.contrastive.measure --root /data/videos/basic_position --encoders $ENCP || \
+    python -m evals.contrastive.measure --root /data/videos/basic_position --encoders $ENC

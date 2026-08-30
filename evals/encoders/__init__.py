@@ -41,12 +41,20 @@ def _pfm(role, readout):
 _REGISTRY = {
     "vjepa2_raw": lambda: _vjepa("raw"),
     "vjepa2_mean": lambda: _vjepa("mean"),
+    "vjepa2_pred_raw": lambda: _vjepa("pred_raw"),
+    "vjepa2_pred_mean": lambda: _vjepa("pred_mean"),
     "fastwam_raw": lambda: _fastwam("raw"),
     "fastwam_mean": lambda: _fastwam("mean"),
+    "fastwam_z_raw": lambda: _fastwam("z_raw"),
+    "fastwam_z_mean": lambda: _fastwam("z_mean"),
+    "fastwam_zf_raw": lambda: _fastwam("zf_raw"),
+    "fastwam_zf_mean": lambda: _fastwam("zf_mean"),
     "qwen3vl_raw": lambda: _qwen3vl("raw"),
     "qwen3vl_mean": lambda: _qwen3vl("mean"),
     "cosmos_raw": lambda: _cosmos("raw"),
     "cosmos_mean": lambda: _cosmos("mean"),
+    "cosmos_pred_raw": lambda: _cosmos("pred_raw"),
+    "cosmos_pred_mean": lambda: _cosmos("pred_mean"),
 }
 
 # PFM checkpoint ladder (see pfm.py): pfm_{role}_{raw,mean} for the six

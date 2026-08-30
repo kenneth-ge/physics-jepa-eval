@@ -65,8 +65,13 @@ def _last_frames(video_path):
 
 
 class CosmosEncoder(Encoder):
+    """readout: raw/mean = mid-layer gen-stream hidden state (grid / pooled);
+    pred_raw/pred_mean = the pipeline's RETURNED latent — the one-step
+    denoised prediction in VAE-latent space (the model's one-shot guess at
+    the continuation), grid / channel-pooled."""
+
     def __init__(self, readout="raw"):
-        assert readout in ("raw", "mean")
+        assert readout in ("raw", "mean", "pred_raw", "pred_mean")
         self.readout = readout
         self.name = f"cosmos_{readout}"
 
@@ -77,22 +82,57 @@ class CosmosEncoder(Encoder):
         video = _last_frames(video_path)
 
         captured = {}
+        want_pred = self.readout.startswith("pred")
 
         def hook(_m, _in, out):
             captured["h"] = out[1].detach().float()   # gen_seq = video stream (N,5120)
-            raise _Stop()                              # skip VAE decode / sampling
+            if not want_pred:
+                raise _Stop()                          # skip VAE decode / sampling
 
         handle = pipe.transformer.layers[s["mid"]].register_forward_hook(hook)
         try:
             with torch.no_grad():
-                pipe(video=video, prompt="", num_frames=len(video),
-                     num_inference_steps=1, guidance_scale=1.0,
-                     height=SIZE, width=SIZE, fps=FPS,
-                     enable_safety_check=False, output_type="latent")
+                # fixed seed: the gen-stream latents are initialized from
+                # noise, and an unseeded draw differs per encode — raw
+                # distances then carry a noise-vs-noise floor that pooling
+                # averages away (why cosmos_mean beat cosmos_raw on the
+                # magnitude sweeps). One shared draw makes encode(video)
+                # deterministic and cross-clip comparable.
+                gen = torch.Generator(device="cuda").manual_seed(0)
+                out = pipe(video=video, prompt="", num_frames=len(video),
+                           num_inference_steps=1, guidance_scale=1.0,
+                           height=SIZE, width=SIZE, fps=FPS, generator=gen,
+                           enable_safety_check=False, output_type="latent")
         except _Stop:
-            pass
+            out = None
         finally:
             handle.remove()
+
+        if want_pred:
+            # diffusers BaseOutput is dict-like; field name varies by pipeline
+            lat = None
+            for k in ("latents", "frames", "videos", "video", "sample"):
+                lat = getattr(out, k, None)
+                if lat is not None:
+                    break
+            if lat is None and hasattr(out, "keys"):
+                for k in out.keys():
+                    if out[k] is not None:
+                        lat = out[k]
+                        break
+            if lat is None:
+                keys = list(out.keys()) if hasattr(out, "keys") else dir(out)
+                raise RuntimeError(
+                    f"no latent field on {type(out).__name__}; fields: {keys}")
+            if isinstance(lat, (list, tuple)):
+                lat = lat[0]
+            lat = torch.as_tensor(lat).detach().float().cpu()
+            if lat.ndim >= 4 and lat.shape[0] == 1:
+                lat = lat[0]                          # drop batch -> (C, T', H', W')
+            grid = lat.numpy()
+            if self.readout == "pred_mean":           # pool positions, keep channels
+                return grid.reshape(grid.shape[0], -1).mean(axis=1).ravel()
+            return grid.ravel()
 
         grid = captured["h"].cpu().numpy()            # (num_video_tokens, 5120)
         return grid.mean(axis=0).ravel() if self.readout == "mean" else grid.ravel()

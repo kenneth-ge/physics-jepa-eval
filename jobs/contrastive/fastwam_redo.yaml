@@ -1,0 +1,80 @@
+name: kenny-fastwam-redo
+
+# FastWAM from-scratch re-encode, two fixes at once:
+#   1. FIXED PROMPT CONTEXT — the old zeroed context decodes as an
+#      all-padding prompt (structurally OOD vs training, which always used a
+#      real T5 task embedding). Now: one cached embedding of the neutral
+#      prompt ("... observe the scene."), identical for every clip.
+#   2. VIDEO-EXPERT Z TAPS — new fastwam_z_* (video DiT mid+1 block) and
+#      fastwam_zf_* (final block): the world representation the action
+#      expert cross-attends into, vs the old action-stream tap (fastwam_*).
+# Old vectors are backed up at /data/fastwam_vectors_backup_2026-08-30.tgz.
+#   sky jobs launch -n kenny-fastwam-redo -y jobs/contrastive/fastwam_redo.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  FLAT="cube basic_color basic_position roll occlusion bowl_stereo"
+  REC="counting_sweep_stereo count2_sweep count3_sweep bounce_sweep collision deform_adjusted deform_history"
+  TAGS="fastwam_raw fastwam_mean fastwam_z_raw fastwam_z_mean fastwam_zf_raw fastwam_zf_mean"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    export FASTWAM_CTX=/data/fastwam/fixed_ctx.pt
+
+    echo "=== build fixed prompt context (once) ==="
+    [ -f "$FASTWAM_CTX" ] || PYTHONPATH=. python scripts/make_fastwam_context.py --out "$FASTWAM_CTX"
+
+    echo "=== determinism + tap smoke checks ==="
+    V=$(find /data/videos/bounce_sweep -name A.mp4 | head -1)
+    PYTHONPATH=. python scripts/check_encoder_determinism.py fastwam_raw "$V"
+    PYTHONPATH=. python scripts/check_encoder_determinism.py fastwam_z_raw "$V"
+
+    for R in $FLAT; do
+      echo "=== fastwam precompute $R ==="
+      python -m evals.precompute --root /data/videos/$R --clips A B C --encoders $TAGS
+    done
+    for R in $REC; do
+      echo "=== fastwam precompute $R (recursive) ==="
+      python -m evals.precompute --root /data/videos/$R --recursive --clips A B C --encoders $TAGS
+    done
+
+    ENC=$(for t in $TAGS; do printf 'saved:%s ' $t; done)
+    for R in cube basic_color basic_position roll occlusion bowl_stereo; do
+      echo "=== TABLE: $R (fastwam redo) ==="
+      python -m evals.contrastive.measure --root /data/videos/$R --encoders $ENC
+    done
+    for R in counting_sweep_stereo count2_sweep count3_sweep; do
+      echo "=== TABLE: $R (fastwam redo) ==="
+      python -m evals.contrastive.aggregate_counting --root /data/videos/$R --encoders $ENC
+    done
+    for R in bounce_sweep collision deform_adjusted deform_history; do
+      echo "=== TABLE: $R (fastwam redo) ==="
+      python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+    done
+  ) || echo "FASTWAM STEP FAILED"

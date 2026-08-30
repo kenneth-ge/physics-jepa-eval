@@ -1,59 +1,84 @@
 """Generate RESULTS_contrastive.md with colour-shaded HTML tables (pass-rate heatmap).
 
-Cells carry the L1 pass rate; background is a diverging scale centred on chance
+Cells carry the invariant pass rate on the FLAT (raw) latent — one cosine and
+one L1 column per model. Background is a diverging scale centred on chance
 (~0.33): red = at/below chance (bad), pale-yellow ~chance, green = high (good).
 Colour is never the sole signal (the number is in every cell). HTML tables
 render in the VS Code markdown preview.
+
+All values recomputed 2026-08-30 from the saved `__<tag>.npy` vectors under
+/data/videos on kenny-dev (raw readout only). Mean-pooled columns were dropped
+from the doc at the same time; the flat/mean L1 tables live in git history.
+Legacy exceptions (V-JEPA ran live before vectors were saved): bowl row uses
+the recorded 4/4-all-readouts result; counting_sweep V-JEPA/Qwen stay a text
+note (only X=1 passes).
 """
 
 import pathlib
 
-MODELS8 = ["VJEPA flat", "VJEPA mean", "Qwen flat", "Qwen mean",
-           "Cosmos flat", "Cosmos mean", "FastWAM flat", "FastWAM mean"]
+# 4 models x (cos, L1), flat/raw readout only; VJEPA also gets its predictor
+# readout (vjepa2_pred_raw: the JEPA predictor's forecast of the last-second
+# grid from pre-last-second context; job 15396)
+COLS8 = ["VJEPA cos", "VJEPA L1", "VJEPA pred cos", "VJEPA pred L1",
+         "Qwen cos", "Qwen L1",
+         "Cosmos cos", "Cosmos L1", "FastWAM cos", "FastWAM L1"]
 
-# --- fixed-scene families (L1 pass rate; 4 models x flat/mean) ---------------
+# --- fixed-scene families (pass rate; per model: cos, l1) --------------------
 FIXED = [
-    ("bowl (4)",            [1.00, 1.00, 1.00, 1.00, 0.75, 1.00, 1.00, 1.00]),
-    ("cube (30)",           [1.00, 0.87, 1.00, 0.95, 1.00, 1.00, 1.00, 1.00]),
-    ("basic_color (30)",    [0.87, 0.83, 0.80, 0.90, 1.00, 1.00, 1.00, 1.00]),
-    ("basic_position (30)", [0.97, 1.00, 0.97, 0.70, 0.97, 0.77, 1.00, 1.00]),
-    ("roll (30)",           [0.00, 1.00, 0.83, 0.47, 0.97, 1.00, 0.47, 0.50]),
-    ("occlusion (30)",      [0.00, 0.00, 0.13, 0.30, 0.83, 0.77, 0.67, 0.67]),
+    ("bowl (4)",               [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.75, 0.75, 1.00, 1.00]),
+    ("cube v2 (30)",           [1.00, 1.00, 0.97, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    ("basic_color v2 (30)",    [0.93, 0.93, 0.90, 0.90, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    ("basic_position (30)",    [0.97, 0.97, 1.00, 1.00, 0.97, 0.97, 1.00, 0.97, 1.00, 1.00]),
+    ("roll (30)",              [0.00, 0.00, 0.43, 0.40, 0.77, 0.83, 0.93, 0.97, 0.40, 0.43]),
+    ("occlusion (30)",         [0.00, 0.00, 0.00, 0.00, 0.17, 0.13, 0.80, 0.83, 0.70, 0.70]),
 ]
 
 # --- basic_counting: disjoint layouts, X+1 vs X (Cosmos/FastWAM measured) ----
 COUNTING = [
-    (1, 0.88, 0.88, 0.88, 0.88), (2, 0.50, 0.75, 0.50, 0.62),
-    (3, 0.12, 0.62, 0.12, 0.25), (4, 0.12, 0.38, 0.25, 0.25),
-    (5, 0.00, 0.25, 0.25, 0.12), (6, 0.00, 0.25, 0.00, 0.12),
-    (7, 0.00, 0.12, 0.25, 0.12), (8, 0.00, 0.38, 0.12, 0.12),
-    (9, 0.00, 0.12, 0.00, 0.12), (10, 0.00, 0.25, 0.12, 0.12),
+    (1, [1.00, 0.88, 0.88, 0.88]), (2, [0.50, 0.50, 0.50, 0.50]),
+    (3, [0.12, 0.12, 0.25, 0.12]), (4, [0.25, 0.12, 0.25, 0.25]),
+    (5, [0.00, 0.00, 0.25, 0.25]), (6, [0.00, 0.00, 0.00, 0.00]),
+    (7, [0.00, 0.00, 0.25, 0.25]), (8, [0.00, 0.00, 0.12, 0.12]),
+    (9, [0.00, 0.00, 0.00, 0.00]), (10, [0.00, 0.00, 0.12, 0.12]),
 ]
 
 # --- count2: NESTED counting (A subset B subset C; X, X+1, 2X) ---------------
 COUNT2 = [
-    (2,  [0.25, 0.00, 0.12, 0.00, 0.12, 0.38, 0.38, 0.38]),
-    (3,  [0.75, 0.62, 0.75, 0.75, 1.00, 1.00, 0.88, 0.88]),
-    (4,  [0.88, 0.62, 1.00, 0.88, 1.00, 1.00, 1.00, 1.00]),
-    (5,  [0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (6,  [1.00, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (7,  [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (8,  [1.00, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (9,  [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (10, [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (2,  [0.25, 0.25, 0.00, 0.00, 0.12, 0.12, 0.12, 0.12, 0.38, 0.38]),
+    (3,  [0.75, 0.75, 0.62, 0.62, 0.50, 0.75, 0.88, 1.00, 1.00, 0.88]),
+    (4,  [0.88, 0.88, 0.62, 0.62, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (5,  [0.88, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (6,  [1.00, 1.00, 0.88, 0.75, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (7,  [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (8,  [1.00, 1.00, 0.88, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (9,  [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (10, [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+]
+
+# --- count3: NESTED counting, constant gaps (A⊂B⊂C; X, X+1, X+3; job 14914) --
+COUNT3 = [
+    (2,  [0.75, 0.75, 0.88, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (3,  [0.75, 0.75, 0.25, 0.25, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
+    (4,  [0.88, 0.88, 0.88, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (5,  [0.88, 0.88, 0.38, 0.38, 0.75, 0.88, 0.88, 1.00, 0.50, 0.75]),
+    (6,  [1.00, 1.00, 0.88, 0.88, 0.88, 1.00, 0.88, 0.88, 1.00, 1.00]),
+    (7,  [0.75, 0.75, 0.62, 0.62, 0.75, 0.88, 1.00, 0.88, 0.88, 1.00]),
+    (8,  [1.00, 1.00, 0.62, 0.62, 0.75, 0.75, 1.00, 1.00, 0.88, 0.75]),
+    (9,  [0.75, 0.75, 0.88, 0.88, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
+    (10, [0.75, 0.62, 0.25, 0.25, 0.75, 0.88, 0.88, 0.88, 1.00, 1.00]),
 ]
 
 # --- bounce ADJUSTED: rebound in last second; A,B share drop point, B = A + a
 # 0.5s still prefix (no position confound); all 4 models (job 8913) -----------
 BOUNCE_ADJ = [
-    (0.50, [0.00, 0.00, 0.12, 0.00, 0.50, 1.00, 0.00, 0.00]),
-    (0.70, [0.00, 0.00, 0.00, 0.00, 0.38, 1.00, 0.00, 0.00]),
-    (0.85, [0.00, 0.00, 0.12, 0.00, 0.25, 1.00, 0.00, 0.00]),
+    (0.50, [0.00, 0.00, 0.25, 0.12, 0.25, 0.50, 0.00, 0.00]),
+    (0.70, [0.00, 0.00, 0.12, 0.00, 0.25, 0.38, 0.00, 0.00]),
+    (0.85, [0.00, 0.00, 0.25, 0.12, 0.25, 0.25, 0.00, 0.00]),
     (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.20, [0.00, 0.00, 0.88, 0.25, 0.50, 1.00, 1.00, 1.00]),
-    (1.50, [0.00, 0.00, 1.00, 0.38, 0.62, 1.00, 1.00, 1.00]),
+    (1.20, [0.00, 0.00, 0.88, 0.88, 0.75, 0.50, 1.00, 1.00]),
+    (1.50, [0.00, 0.00, 0.88, 1.00, 0.62, 0.62, 1.00, 1.00]),
     (1.75, [0.00, 0.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (2.00, [0.00, 0.12, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (2.00, [0.00, 0.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
 ]
 
 # --- deform ADJUSTED: cube still squashed in the last second; sweep k2/k1 -----
@@ -64,30 +89,37 @@ DEFORM_ADJ = [
     (0.85, [0.00, 0.00, 0.00, 0.00, 1.00, 1.00, 0.88, 0.88]),
     (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
     (1.20, [0.00, 0.00, 0.00, 0.00, 1.00, 1.00, 1.00, 1.00]),
-    (1.50, [0.00, 0.00, 0.00, 0.00, 0.88, 1.00, 0.88, 0.88]),
-    (1.75, [0.00, 0.00, 0.00, 0.00, 0.88, 1.00, 0.75, 0.75]),
-    (2.00, [0.00, 0.00, 0.00, 0.00, 0.50, 1.00, 0.75, 0.75]),
+    (1.50, [0.00, 0.00, 0.00, 0.00, 0.88, 0.88, 0.88, 0.88]),
+    (1.75, [0.00, 0.00, 0.00, 0.00, 0.75, 0.88, 0.88, 0.75]),
+    (2.00, [0.00, 0.00, 0.00, 0.00, 0.50, 0.50, 0.75, 0.75]),
 ]
 
 # --- collision: MASS via momentum transfer; matched impact momentum; sweep m2/m
 COLLISION = [
-    (0.50, [0.00, 0.00, 0.25, 0.00, 1.00, 1.00, 1.00, 1.00]),
-    (0.70, [0.00, 0.00, 0.00, 0.00, 0.25, 0.75, 1.00, 1.00]),
-    (0.85, [0.00, 0.00, 0.00, 0.00, 0.00, 0.38, 1.00, 1.00]),
+    (0.50, [0.00, 0.00, 0.38, 0.25, 1.00, 1.00, 1.00, 1.00]),
+    (0.70, [0.00, 0.00, 0.12, 0.00, 0.88, 0.25, 1.00, 1.00]),
+    (0.85, [0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 1.00, 1.00]),
     (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
-    (1.20, [0.00, 0.00, 0.00, 0.00, 0.00, 0.38, 1.00, 1.00]),
-    (1.50, [0.00, 0.00, 0.00, 0.00, 0.12, 0.88, 1.00, 1.00]),
-    (1.75, [0.00, 0.00, 0.12, 0.00, 0.38, 1.00, 1.00, 1.00]),
-    (2.00, [0.00, 0.00, 0.62, 0.00, 0.88, 1.00, 1.00, 1.00]),
+    (1.20, [0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 1.00, 1.00]),
+    (1.50, [0.00, 0.00, 0.00, 0.00, 0.62, 0.12, 1.00, 1.00]),
+    (1.75, [0.00, 0.00, 0.25, 0.12, 1.00, 0.38, 1.00, 1.00]),
+    (2.00, [0.00, 0.00, 0.75, 0.62, 1.00, 0.88, 1.00, 1.00]),
 ]
 
 # --- bounce VOID: signal only in history; V-JEPA + Qwen only -----------------
 BOUNCE_VOID = [
-    (0.50, [0.00, 0.00, 0.00, 0.00]), (0.70, [0.00, 0.00, 0.00, 0.00]),
+    (0.50, [0.00, 0.00, 0.12, 0.00]), (0.70, [0.00, 0.00, 0.00, 0.00]),
     (0.85, [0.00, 0.00, 0.00, 0.00]), (1.00, [0.00, 0.00, 0.00, 0.00]),
     (1.20, [0.00, 0.00, 0.00, 0.00]), (1.50, [0.00, 0.00, 0.00, 0.00]),
     (1.75, [0.00, 0.00, 0.00, 0.00]), (2.00, [0.00, 0.00, 0.12, 0.12]),
 ]
+
+def with_pred_zeros(rows):
+    """VJEPA pred (cos, l1) scored 0.00 at every factor of the bounce /
+    deform / collision / void sweeps (job 15396) — insert the two columns
+    programmatically instead of hand-editing every row."""
+    return [(f, v[:2] + [0.00, 0.00] + v[2:]) for f, v in rows]
+
 
 CHANCE = 1.0 / 3.0
 BAD, MID, GOOD = (215, 48, 39), (255, 255, 191), (26, 152, 80)
@@ -119,30 +151,73 @@ def table(headers, rows):
 
 doc = ["# Results\n",
        "Invariant pass rates (A,B closer than C, on the last-second embedding). "
-       "Cells = **L1 pass rate**, shaded diverging around chance (~0.33): "
-       "**red = at/below chance**, pale-yellow ~chance, **green = high**; the "
-       "value is in every cell. `flat` = raw whole vector, `mean` = mean-pooled.\n"]
+       "Latent = the model's **flat (raw) vector** only; per model, one "
+       "**cosine** and one **L1** column. Cells shaded diverging around chance "
+       "(~0.33): **red = at/below chance**, pale-yellow ~chance, **green = "
+       "high**; the value is in every cell. (Mean-pooled readouts dropped "
+       "2026-08-30; the old flat/mean L1 tables are in git history.)\n"]
 
 doc.append("## Fixed-scene families\n")
-doc.append(table(["scenario (N)"] + MODELS8, FIXED) + "\n")
+doc.append(table(["scenario (N)"] + COLS8, FIXED) + "\n")
+doc.append("cube v2 (job 14797): A,B share BOTH endpoints via different paths "
+           "(identical first frame + last second); C = A's exact path shape "
+           "translated — position alone separates C. Raw is perfect for all "
+           "4 models (the retired mean readouts were the only ones that "
+           "cracked: VJEPA 27/30, Qwen 29/30). basic_color v2 (same job): "
+           "A/B hue separation fixed at 0.04 of the wheel (~14°, the old "
+           "minimum); only V-JEPA drops any. bowl V-JEPA vectors are now "
+           "saved (job 15396) — 4/4 confirmed. VJEPA pred = the JEPA "
+           "predictor's forecast of the last-second grid from earlier "
+           "context (caveat: the HF encoder attends over the whole clip, so "
+           "the forecast is target-contaminated except on history-only "
+           "families). Notable: pred partially recovers roll where observed "
+           "raw is 0/30 (pred_raw 13/30; pred_mean — pooled, not shown — "
+           "hits 30/30).\n")
+doc.append("FastWAM re-encoded from scratch (job 15391) under the corrected "
+           "conditioning: a fixed cached T5 prompt embedding replaces the "
+           "old all-zeros context, which decoded as a 128-token all-padding "
+           "prompt (structurally OOD vs training). Pass rates reproduce the "
+           "old numbers almost exactly (roll/occlusion shift ≤2 cases) — the "
+           "constant OOD context was benign for the relative invariant. New "
+           "video-expert z readouts (fastwam_z_*/zf_*, the world "
+           "representation the action head cross-attends into) were measured "
+           "but NOT promoted to the table: the action-stream tap matches or "
+           "beats z on every physics sweep (bounce 1.50: action 1.00 vs z "
+           "0.50; deform 2.00: 0.75 vs 0.12-0.25) — the action head "
+           "distills, not discards. EXCEPTION and eval-design flag: "
+           "occlusion z_raw = 30/30 from a SINGLE frame, so the occlusion "
+           "family has a static end-frame cue (action tap 21/30 was already "
+           "above chance) — it is not history-only for pixel-faithful "
+           "readouts.\n")
 
 doc.append("## basic_counting — disjoint layouts, sweep over count X\n")
-doc.append(table(["X", "Cosmos flat", "Cosmos mean", "FastWAM flat", "FastWAM mean"],
-                 [(str(x), list(v)) for x, *v in COUNTING]) + "\n")
-doc.append("VJEPA & Qwen: only X=1 passes; X≥2 at/below chance.\n")
+doc.append(table(["X", "Cosmos cos", "Cosmos L1", "FastWAM cos", "FastWAM L1"],
+                 [(str(x), list(v)) for x, v in COUNTING]) + "\n")
+doc.append("VJEPA now measured (job 15396, raw cos/L1): 0.75 at X=1 falling "
+           "to ≈0–0.25 by X≥4 — same cardinality blind spot; pred no better. "
+           "Qwen (recorded live run): only X=1 passes.\n")
 
 doc.append("## count2 — NESTED counting (A⊂B⊂C: X, X+1, 2X), sweep over X\n")
-doc.append(table(["X"] + MODELS8, COUNT2) + "\n")
+doc.append(table(["X"] + COLS8, COUNT2) + "\n")
+
+doc.append("## count3 — NESTED counting, constant gaps (A⊂B⊂C: X, X+1, X+3), "
+           "sweep over X\n")
+doc.append(table(["X"] + COLS8, COUNT3) + "\n")
+doc.append("Gaps stay 1 vs 2 cubes at every X (Weber-style: relative difference "
+           "shrinks as X grows), unlike count2 where B→C adds X−1 cubes. "
+           "Cosmos/FastWAM near ceiling throughout; V-JEPA and Qwen hold "
+           "~0.75–0.88 with no clean collapse by X=10, though margins shrink "
+           "with X for all but FastWAM (job 14914).\n")
 
 doc.append("## bounce (adjusted) — rebound in the last second; A,B share drop "
            "point (B = A + 0.5s still prefix); sweep r2/r1 (r1=0.45; 1.00 = control C≡A)\n")
-doc.append(table(["factor"] + MODELS8,
-                 [(f"{f:.2f}", v) for f, v in BOUNCE_ADJ]) + "\n")
+doc.append(table(["factor"] + COLS8,
+                 [(f"{f:.2f}", v) for f, v in with_pred_zeros(BOUNCE_ADJ)]) + "\n")
 
 doc.append("## deform (adjusted) — material stiffness; cube still squashed in the "
            "last second; sweep k2/k1 (1.00 = control C≡A)\n")
-doc.append(table(["factor"] + MODELS8,
-                 [(f"{f:.2f}", v) for f, v in DEFORM_ADJ]) + "\n")
+doc.append(table(["factor"] + COLS8,
+                 [(f"{f:.2f}", v) for f, v in with_pred_zeros(DEFORM_ADJ)]) + "\n")
 doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly; "
            "whole-clip models (V-JEPA, Qwen) wash it out. deform (history) — same "
            "end image, signal only in the squash history — is uniformly at/below "
@@ -150,17 +225,24 @@ doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly
 
 doc.append("## collision — MASS via momentum transfer; matched impact momentum "
            "(A,B) vs much heavier target (C); sweep m2/m (1.00 = control C≡A)\n")
-doc.append(table(["factor"] + MODELS8,
-                 [(f"{f:.2f}", v) for f, v in COLLISION]) + "\n")
+doc.append(table(["factor"] + COLS8,
+                 [(f"{f:.2f}", v) for f, v in with_pred_zeros(COLLISION)]) + "\n")
 doc.append("FastWAM reads the collision outcome cleanly (rebound vs target "
-           "displacement in the last frame); Cosmos mean partially; whole-clip "
-           "models (V-JEPA, Qwen) at/below chance.\n")
+           "displacement in the last frame); Cosmos partially — and cos≫L1 for "
+           "Cosmos here (1.00 vs 0.38 at 1.75), the doc's biggest metric "
+           "split; whole-clip models (V-JEPA, Qwen) at/below chance except "
+           "Qwen at the extremes.\n")
 
 doc.append("## bounce (void) — signal only in history (V-JEPA + Qwen), sweep r2/r1\n")
-doc.append(table(["factor", "VJEPA flat", "VJEPA mean", "Qwen flat", "Qwen mean"],
-                 [(f"{f:.2f}", v) for f, v in BOUNCE_VOID]) + "\n")
+doc.append(table(["factor", "VJEPA cos", "VJEPA L1", "VJEPA pred cos",
+                  "VJEPA pred L1", "Qwen cos", "Qwen L1"],
+                 [(f"{f:.2f}", v) for f, v in with_pred_zeros(BOUNCE_VOID)]) + "\n")
 doc.append("Whole-clip attention does **not** recover a history-only signal at "
-           "the last-second readout — at/below chance at every factor.\n")
+           "the last-second readout — at/below chance at every factor. The "
+           "VJEPA predictor readout (leak-free here: A/B/C last seconds are "
+           "identical, so only history can reach the forecast) is ALSO at "
+           "zero — even the predictor does not forecast different end states "
+           "from different histories. Same for deform_history.\n")
 
 pathlib.Path("RESULTS_contrastive.md").write_text("\n".join(doc))
 print("wrote RESULTS_contrastive.md")

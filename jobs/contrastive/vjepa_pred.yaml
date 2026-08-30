@@ -1,0 +1,70 @@
+name: kenny-vjepa-pred
+
+# V-JEPA 2 PREDICTOR readout: vjepa2_pred_{raw,mean} = the JEPA predictor's
+# forecast of the last-second token grid given pre-last-second context
+# (HF context_mask/target_mask; caveat: the encoder attends over the whole
+# clip, so context tokens are not strictly future-blind). Precomputes pred
+# vectors over every vjepa family + closes two legacy gaps (bowl and
+# counting_sweep never had saved vjepa vectors), then prints tables.
+#   sky jobs launch -n kenny-vjepa-pred -y jobs/contrastive/vjepa_pred.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+
+run: |
+  set +e
+  FLAT="cube basic_color basic_position roll occlusion"
+  REC="count2_sweep count3_sweep bounce_sweep bounce_void collision deform_adjusted deform_history"
+
+  echo "=== determinism / smoke check ==="
+  V=$(find /data/videos/bounce_sweep -name A.mp4 | head -1)
+  PYTHONPATH=. python scripts/check_encoder_determinism.py vjepa2_pred_raw "$V"
+
+  for R in $FLAT; do
+    echo "=== vjepa pred precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips A B C \
+        --encoders vjepa2_pred_raw vjepa2_pred_mean
+  done
+  for R in $REC; do
+    echo "=== vjepa pred precompute $R (recursive) ==="
+    python -m evals.precompute --root /data/videos/$R --recursive --clips A B C \
+        --encoders vjepa2_pred_raw vjepa2_pred_mean
+  done
+  echo "=== vjepa precompute bowl + counting_sweep (legacy gaps: all 4 tags) ==="
+  python -m evals.precompute --root /data/videos/bowl --clips A B C \
+      --encoders vjepa2_raw vjepa2_mean vjepa2_pred_raw vjepa2_pred_mean
+  python -m evals.precompute --root /data/videos/counting_sweep --recursive --clips A B C \
+      --encoders vjepa2_raw vjepa2_mean vjepa2_pred_raw vjepa2_pred_mean
+
+  ENC="saved:vjepa2_raw saved:vjepa2_pred_raw saved:vjepa2_pred_mean"
+  for R in cube basic_color basic_position roll occlusion bowl; do
+    echo "=== TABLE: $R (vjepa pred) ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $ENC
+  done
+  for R in counting_sweep count2_sweep count3_sweep; do
+    echo "=== TABLE: $R (vjepa pred) ==="
+    python -m evals.contrastive.aggregate_counting --root /data/videos/$R --encoders $ENC
+  done
+  for R in bounce_sweep bounce_void collision deform_adjusted deform_history; do
+    echo "=== TABLE: $R (vjepa pred) ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+  done
