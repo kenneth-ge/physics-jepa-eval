@@ -1,0 +1,65 @@
+name: kenny-count3
+
+# count3 nested-counting sweep (A=X, B=X+1, C=X+3 cubes, shared positions),
+# X = 2..10, 8 seeds, across all 4 models. Managed job — launch with:
+#   sky jobs launch -n kenny-count3 -y jobs/contrastive/count3.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  C3=/data/videos/count3_sweep
+  rm -rf $C3
+
+  echo "=== render count3 (stereo, X=2..10) ==="
+  python -m evals.contrastive.render_count3 --out-root $C3 --seeds 8 --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $C3 --recursive --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $C3 --recursive --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $C3 --recursive --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $C3 --recursive --encoders fastwam_raw fastwam_mean
+
+    ENC="saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean"
+    echo "=== COUNT3 SWEEP TABLE ==="
+    python -m evals.contrastive.aggregate_counting --root $C3 --encoders $ENC
+  ) || echo "FASTWAM/MEASURE STEP FAILED"

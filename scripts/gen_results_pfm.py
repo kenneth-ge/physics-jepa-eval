@@ -28,12 +28,23 @@ ROWS = [
     ("count2 (pass X=4–10, raw)", 1.0,
      [0.66, 0.68, 1.00, 0.66, 0.98, 0.61], "r",
      "separates; middle>best"),
-    ("cube (of 30, raw)", 30.0,
+    ("count3 (pass X=4–10, raw; job 15324)", 1.0,
+     [0.52, 0.60, 0.88, 0.54, 0.86, 0.50], "r",
+     "separates; middle≫best — best COLLAPSES at X≥8 (0.25) despite huge "
+     "low-X margins"),
+    ("cube v1 (of 30, raw; job 9490)", 30.0,
      [23, 21, 30, 27, 30, 27], "n",
-     "separates; middle>best"),
-    ("basic_color (of 30, raw)", 30.0,
-     [15, 19, 26, 24, 29, 22], "n",
-     "separates; middle>best"),
+     "separates; middle>best (v1 design: A/B different starts, C an "
+     "independent path — videos since replaced by v2 on the volume)"),
+    ("cube v2 (of 30, raw; job 15324)", 30.0,
+     [29, 27, 30, 29, 30, 30], "n",
+     "SATURATED — v2 (shared endpoints, C = A's path translated) is too easy "
+     "for the ladder; weak rungs failed v1 on the path/start variation, not "
+     "on position"),
+    ("basic_color v2 (of 30, raw; job 15324)", 30.0,
+     [22, 23, 27, 30, 30, 29], "n",
+     "<b>monotone worst&lt;low&lt;middle&lt;best</b> — at the fixed 0.04 hue "
+     "gap, best finally outranks middle (v1: 15→26, middle>best)"),
     ("occlusion (of 30, mean)", 30.0,
      [16, 27, 28, 29, 16, 13], "n",
      "<b>monotone worst&lt;low&lt;middle&lt;best</b>"),
@@ -124,6 +135,16 @@ doc = [
     "(1). **Bold = row best** (ties jointly). Colour compares rungs within a "
     "row and rough levels across rows; the verdict column is the read.\n",
     table(ROWS) + "\n",
+    "**2026-08-29 update (job 15324):** cube and basic_color re-run on their "
+    "v2 designs, count3 added (nested X, X+1, X+3 — constant 1-vs-2-cube "
+    "gaps). Three reads: (a) cube v2 saturates every rung — controlling path "
+    "shape out of A-vs-C made the family too easy to rank checkpoints, so "
+    "prefer v1-era rows or harder position axes for ladder work; (b) "
+    "basic_color v2 becomes the SECOND perfectly monotone family (after "
+    "occlusion-mean), and the only one where best beats middle — the fine "
+    "hue axis may probe whatever \"best\" was selected on; (c) count3 "
+    "reproduces middle≫best, and best's pass rate collapses at X≥8 while "
+    "its margins stay huge at low X.\n",
     "## Findings\n",
     "1. **The suite does discriminate the ladder.** worst/low sit at the "
     "floor and step-10000 checkpoints clearly above it wherever there is "

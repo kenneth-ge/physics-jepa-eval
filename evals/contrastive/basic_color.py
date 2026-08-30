@@ -3,13 +3,14 @@
 Each test case renders the SAME object (same shape, same pose) three times,
 changing only its color:
 
-  A, B: two hues a SHORT arc apart on the HSV color wheel (perceptually close);
+  A, B: two hues a FIXED short arc apart on the HSV color wheel (0.04 of
+        the wheel, ~14 deg — perceptually close);
   C:    the roughly OPPOSITE hue (~180 deg away on the wheel).
 
 Saturation and value are held equal across A/B/C within a case, so the only
 signal is hue-wheel distance. Invariant: A,B (near hues) closer to each other
-than either is to C (far hue). 30 cases vary the base hue, the A/B separation,
-the sign of that separation, and the shared saturation/value.
+than either is to C (far hue). 30 cases vary the base hue, the sign of the
+A/B separation, and the shared saturation/value.
 
 Scenes are static: one rendered frame tiled to the clip length. `--rig stereo`
 also writes the right camera (<name>_right.mp4) for two-view models.
@@ -32,8 +33,8 @@ from ..common.xml_scene import scene_xml, fr
 EVAL_IDS = list(range(30))
 SEED_BASE = 4200
 
-# A/B hue separation (fraction of the wheel; 1.0 == 360 deg). ~14-40 deg.
-AB_SEP = (0.04, 0.11)
+# A/B hue separation (fraction of the wheel; 1.0 == 360 deg). Fixed ~14 deg.
+AB_SEP = 0.04
 # C offset from the base hue: ~half the wheel, lightly jittered so C is not
 # always exactly antipodal.
 C_JITTER = 0.05
@@ -57,7 +58,7 @@ def case_hsv(i):
     h = float(rng.uniform(0, 1))
     s = float(rng.uniform(*SV_RANGE))
     v = float(rng.uniform(*SV_RANGE))
-    sep = float(rng.uniform(*AB_SEP)) * float(rng.choice([-1.0, 1.0]))
+    sep = AB_SEP * float(rng.choice([-1.0, 1.0]))
     cj = float(rng.uniform(-C_JITTER, C_JITTER))
     return {
         "A": (h % 1.0, s, v),

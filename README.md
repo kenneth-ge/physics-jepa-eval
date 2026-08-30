@@ -62,9 +62,12 @@ python -m evals.contrastive.<family> --out-root <dir> --only 3   # a subset of e
 - `evals/contrastive/bowl.py` — scenarios 1–4 → `scenario_1..4/` (heightfield bowl —
   MuJoCo convexifies meshes, so a concave mesh bowl wouldn't collide).
   Contract: A/B settle at the same spot, everything at rest >1 s.
-- `evals/contrastive/cube.py` — one eval `arc/`: kinematic (mocap, collision-free) cube
-  on semicircular arcs. A: counterclockwise X→Y; B: clockwise X→Y (same
-  endpoints, different path); C: A's arc translated (different start/end).
+- `evals/contrastive/cube.py` — 30 evals (bezier_arc, line, polyline,
+  bezier_chain, orbit, spiral): kinematic (mocap, collision-free) cube on a
+  path. A and B share BOTH endpoints X→Y via different paths (identical
+  first frame + last second); C is A's exact path shape translated
+  elsewhere (different start/end, same shape). Path shape is controlled
+  out of the A-vs-C contrast; only position separates C.
 - `evals/contrastive/basic_counting.py` — evals 1–10 → `eval_01..10/`: A has X prisms,
   B has X prisms elsewhere, C has X+1 prisms at fresh positions (`--c-mode
   union` restores the old 2X superset variant). Static scenes.

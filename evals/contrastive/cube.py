@@ -1,25 +1,33 @@
 """Cube eval family: a kinematic cube (mocap, collision-free — MuJoCo only
 renders) travels along a path and holds its final pose. The last second is
-the measured window, so the invariant depends only on where the cube ENDS:
+the measured window. Path shape is controlled out of the A-vs-C contrast:
 
-  A and B end at the same point Y (identical last second, different paths);
-  C ends at a different point (different last second).
+  A and B share BOTH endpoints — same start X and same end Y — reached by
+  different paths (identical first frame, identical last second);
+  C follows A's EXACT path shape, translated so it starts and ends
+  somewhere else entirely.
+
+So A vs B differ only in trajectory history, and C differs from A only in
+position, never in shape. Invariant: A,B closer than either is to C.
 
 Path types (5 evals each unless noted):
-  bezier_arc  : eval 0 is the original semicircle pair (A ccw / B cw, same
+  bezier_arc  : eval 0 is the original semicircle pair (A ccw / B cw share
                 X and Y; C = A translated); evals 1–4 are random beziers.
-  line        : straight lines (A and B reach Y from different directions).
+  line        : two straight legs through a random waypoint (with both
+                endpoints pinned, a single straight line would make A == B).
   polyline    : random straight-line sequences (3–5 legs).
   bezier_chain: chaotic chains of 2–3 cubic bezier segments.
   orbit       : circular arcs in a random plane.
   spiral      : orbits with growing radius and axial drift.
 
-Every path is pinned to its endpoint by translation, so A/B share Y exactly.
-A camera-projection check guarantees the whole cube stays in frame for every
+Every random path is pinned to both endpoints by a linear warp, so A/B
+share X and Y exactly and C = A + constant offset exactly. A
+camera-projection check guarantees the whole cube stays in frame for every
 frame (verified in --check, no rendering needed) — paths that would leave
-the frame are resampled with a shrinking extent.
+the frame are resampled with a shrinking extent, and C's offset is
+resampled until the translated path is in frame too.
 
-Usage: python -m evals.cube --out-root <dir>   (--only line_2, --check, ...)
+Usage: python -m evals.contrastive.cube --out-root <dir>   (--only line_2, --check, ...)
 """
 
 import math
@@ -37,6 +45,7 @@ from ..common.xml_scene import scene_xml, DEFAULT_CAMERA
 END_BOX = dict(x=0.55, y=0.30, z_lo=0.45, z_hi=1.05)
 SPREAD0 = 0.55          # initial path extent around its endpoint
 MIN_C_OFFSET = 0.5      # C's endpoint must be this far from Y
+MIN_TRAVEL = 0.35       # A/B's shared start must be this far from Y
 N_VIS_SAMPLES = 48      # trajectory samples for the visibility check
 FLOOR_CLEAR = 0.03
 
@@ -83,8 +92,9 @@ def in_frame(points, half, margin=0.02):
 
 
 # ---------------------------------------------------- path shape builders --
-# Each returns shape(u), u in [0,1], with shape(1) == origin (endpoint), so
-# adding the desired endpoint pins the path there.
+# Each returns shape(u), u in [0,1], with shape(1) == origin (endpoint) and a
+# random shape(0); `_pin` then warps the shape linearly so shape(0) lands on
+# the desired start offset, pinning BOTH ends.
 
 def _rand(rng, spread):
     return rng.uniform(-1, 1, 3) * np.array([spread, spread * 0.6, spread * 0.7])
@@ -109,9 +119,19 @@ def _polyline(pts, u):
     return (1 - local) * np.asarray(pts[seg], float) + local * np.asarray(pts[seg + 1], float)
 
 
+def _pin(shape, start_offset):
+    """Warp `shape` (which has shape(1) == 0) by a linear blend so that
+    shape(0) == start_offset as well. Keeps beziers bezier, polylines
+    polyline (adding a linear-in-u term preserves both families)."""
+    delta = np.asarray(start_offset, float) - np.asarray(shape(0.0), float)
+    return lambda u: np.asarray(shape(u)) + (1.0 - u) * delta
+
+
 def g_line(rng, spread):
-    start = _rand(rng, spread)
-    return lambda u: (1 - u) * start
+    # Both endpoints are pinned, so a single straight line would be the same
+    # for A and B; use two straight legs through a random waypoint instead.
+    pts = [_rand(rng, spread), _rand(rng, spread), np.zeros(3)]
+    return lambda u: _polyline(pts, u)
 
 
 def g_bezier(rng, spread):
@@ -185,17 +205,20 @@ def sample_endpoint(rng):
                      rng.uniform(END_BOX["z_lo"], END_BOX["z_hi"])])
 
 
-def build_visible(kind, rng, end, args):
-    """A path of `kind` ending at `end`, guaranteed in-frame; resample with a
-    shrinking extent until the visibility check passes."""
-    ts = np.linspace(0, args.move_time, N_VIS_SAMPLES)
+def build_visible(kind, rng, start, end, args):
+    """A path of `kind` from `start` to `end`, guaranteed in-frame; resample
+    with a shrinking extent until the visibility check passes."""
+    # denser than the final check so corners between its samples can't hide
+    ts = np.linspace(0, args.move_time, 4 * N_VIS_SAMPLES)
+    start_off = np.asarray(start) - np.asarray(end)
     for k in range(400):
-        shape = GENERATORS[kind](rng, SPREAD0 * (0.93 ** k))
+        shape = _pin(GENERATORS[kind](rng, SPREAD0 * (0.93 ** k)), start_off)
         fn = _timed(shape, end, args.move_time, args.hold_time)
         # generate with extra buffer so paths never crowd the frame edge
         if in_frame([fn(t) for t in ts], args.cube_half, margin=0.05):
             return fn
-    return _timed(lambda u: np.zeros(3), end, args.move_time, args.hold_time)
+    return _timed(_pin(lambda u: np.zeros(3), start_off), end,
+                  args.move_time, args.hold_time)
 
 
 def arc_trajectory(name, t, args):
@@ -212,16 +235,36 @@ def arc_trajectory(name, t, args):
 def build_eval(kind, seed, args):
     if kind == "arc":
         return {n: (lambda t, n=n: arc_trajectory(n, t, args)) for n in "ABC"}
-    Y = sample_endpoint(np.random.default_rng([seed, 10]))
+    rng_ends = np.random.default_rng([seed, 10])
+    X = sample_endpoint(rng_ends)
+    Y = sample_endpoint(rng_ends)
+    while np.linalg.norm(X - Y) < MIN_TRAVEL:
+        Y = sample_endpoint(rng_ends)
+
+    # A and C are built together: C is A's exact shape at a translated
+    # endpoint, so both the shape and C's offset must pass the visibility
+    # check — shrink A's extent until a valid pair exists.
+    ts = np.linspace(0, args.move_time, 4 * N_VIS_SAMPLES)
+    rng_a = np.random.default_rng([seed, 0])
     rng_c = np.random.default_rng([seed, 11])
-    Yc = sample_endpoint(rng_c)
-    while np.linalg.norm(Yc - Y) < MIN_C_OFFSET:
-        Yc = sample_endpoint(rng_c)
-    return {
-        "A": build_visible(kind, np.random.default_rng([seed, 0]), Y, args),
-        "B": build_visible(kind, np.random.default_rng([seed, 1]), Y, args),
-        "C": build_visible(kind, np.random.default_rng([seed, 2]), Yc, args),
-    }
+    for k in range(400):
+        shape = _pin(GENERATORS[kind](rng_a, SPREAD0 * (0.93 ** k)), X - Y)
+        fn_a = _timed(shape, Y, args.move_time, args.hold_time)
+        if not in_frame([fn_a(t) for t in ts], args.cube_half, margin=0.05):
+            continue
+        for _ in range(60):
+            Yc = sample_endpoint(rng_c)
+            if np.linalg.norm(Yc - Y) < MIN_C_OFFSET:
+                continue
+            fn_c = _timed(shape, Yc, args.move_time, args.hold_time)
+            if in_frame([fn_c(t) for t in ts], args.cube_half, margin=0.05):
+                return {
+                    "A": fn_a,
+                    "B": build_visible(kind, np.random.default_rng([seed, 1]),
+                                       X, Y, args),
+                    "C": fn_c,
+                }
+    raise RuntimeError(f"no in-frame A/C pair for kind={kind} seed={seed}")
 
 
 def generate(eval_id, out_dir, args):
@@ -230,16 +273,26 @@ def generate(eval_id, out_dir, args):
     duration = args.move_time + args.hold_time
     times = np.arange(int(round(duration * args.fps))) / args.fps
 
-    ends, failures = {}, []
-    for name, fn in trajs.items():
-        pts = [fn(t) for t in np.linspace(0, duration, N_VIS_SAMPLES)]
-        ends[name] = fn(duration)
-        if not in_frame(pts, args.cube_half):
+    sample_ts = np.linspace(0, duration, N_VIS_SAMPLES)
+    pts = {n: np.array([fn(t) for t in sample_ts]) for n, fn in trajs.items()}
+    failures = []
+    for name in "ABC":
+        if not in_frame(pts[name], args.cube_half):
             failures.append(f"{name}: leaves the frame")
-        print(f"{name}: end {np.round(ends[name], 3)}")
-    if np.linalg.norm(ends["A"] - ends["B"]) > 1e-6:
+        print(f"{name}: start {np.round(pts[name][0], 3)} "
+              f"end {np.round(pts[name][-1], 3)}")
+    if np.linalg.norm(pts["A"][0] - pts["B"][0]) > 1e-6:
+        failures.append("A and B must share the start")
+    if np.linalg.norm(pts["A"][-1] - pts["B"][-1]) > 1e-6:
         failures.append("A and B must share the end state")
-    if np.linalg.norm(ends["A"] - ends["C"]) < 0.1:
+    if np.abs(pts["A"] - pts["B"]).max() < 0.05:
+        failures.append("A and B paths must actually differ")
+    off = pts["C"] - pts["A"]
+    if np.abs(off - off[0]).max() > 1e-6:
+        failures.append("C must be A's path translated (same shape)")
+    if np.linalg.norm(pts["A"][0] - pts["C"][0]) < 0.1:
+        failures.append("C must start elsewhere")
+    if np.linalg.norm(pts["A"][-1] - pts["C"][-1]) < 0.1:
         failures.append("C must end elsewhere")
     if out_dir is None:
         return failures

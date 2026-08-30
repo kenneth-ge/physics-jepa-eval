@@ -1,0 +1,53 @@
+name: kenny-pfm-redo
+
+# PFM checkpoint-ladder pass over the 2026-08-29 redesigned/new families:
+# cube v2, basic_color v2 (fixed 0.04 sep), count3 (X, X+1, X+3). No
+# rendering — reads the clips already on /data/videos (rendered by
+# kenny-cube-color / kenny-count3) and adds the 12 pfm ladder tags + tables.
+#   sky jobs launch -n kenny-pfm-redo -y jobs/pfm_redo_families.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q timm "imageio[ffmpeg]" numpy
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  PFME="pfm_worst_raw pfm_worst_mean pfm_low_raw pfm_low_mean \
+        pfm_middle_raw pfm_middle_mean pfm_best_raw pfm_best_mean \
+        pfm_f16_raw pfm_f16_mean pfm_f4_raw pfm_f4_mean"
+  SAVED=$(for e in $PFME; do printf 'saved:%s ' $e; done)
+
+  for R in cube basic_color; do
+    echo "=== pfm precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips A B C --encoders $PFME
+  done
+  echo "=== pfm precompute count3_sweep (recursive) ==="
+  python -m evals.precompute --root /data/videos/count3_sweep --recursive \
+      --clips A B C --encoders $PFME
+
+  for R in cube basic_color; do
+    echo "=== PFM TABLE: $R ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $SAVED
+  done
+  echo "=== PFM TABLE: count3_sweep ==="
+  python -m evals.contrastive.aggregate_counting --root /data/videos/count3_sweep \
+      --encoders $SAVED

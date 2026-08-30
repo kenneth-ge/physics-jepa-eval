@@ -1,0 +1,77 @@
+name: kenny-cube-color
+
+# Re-run cube (new design: A/B share BOTH endpoints via different paths,
+# C = A's path translated) and basic_color (fixed 0.04 A/B hue separation)
+# across all 4 models. Managed job (fresh GPU box) — launch with:
+#   sky jobs launch -n kenny-cube-color -y jobs/contrastive/cube_color_redo.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  CUBE=/data/videos/cube
+  COLOR=/data/videos/basic_color
+  # drop stale roots (old cube design incl. the separate stereo copy; old
+  # color separations) so no old videos or __*.npy survive
+  rm -rf $CUBE /data/videos/cube_stereo $COLOR
+
+  echo "=== render cube (stereo) ==="
+  python -m evals.contrastive.cube --out-root $CUBE --rig stereo
+  echo "=== render basic_color (stereo) ==="
+  python -m evals.contrastive.basic_color --out-root $COLOR --rig stereo
+
+  echo "=== vjepa precompute ==="
+  python -m evals.precompute --root $CUBE --encoders vjepa2_raw vjepa2_mean
+  python -m evals.precompute --root $COLOR --encoders vjepa2_raw vjepa2_mean
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $CUBE --encoders qwen3vl_raw qwen3vl_mean
+    python -m evals.precompute --root $COLOR --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $CUBE --encoders cosmos_raw cosmos_mean
+    python -m evals.precompute --root $COLOR --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    echo "=== fastwam precompute ==="
+    python -m evals.precompute --root $CUBE --encoders fastwam_raw fastwam_mean
+    python -m evals.precompute --root $COLOR --encoders fastwam_raw fastwam_mean
+
+    ENC="saved:vjepa2_raw saved:vjepa2_mean saved:qwen3vl_raw saved:qwen3vl_mean saved:cosmos_raw saved:cosmos_mean saved:fastwam_raw saved:fastwam_mean"
+    echo "=== CUBE TABLE ==="
+    python -m evals.contrastive.measure --root $CUBE --encoders $ENC
+    echo "=== BASIC_COLOR TABLE ==="
+    python -m evals.contrastive.measure --root $COLOR --encoders $ENC
+  ) || echo "FASTWAM/MEASURE STEP FAILED"

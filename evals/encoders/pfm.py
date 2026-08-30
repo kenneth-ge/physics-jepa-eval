@@ -40,7 +40,7 @@ from ..common.video import load_video
 from .base import Encoder
 
 CKPT_DIR = os.environ.get("PFM_CKPT_DIR", "/data/pfm/pfm-latent-eval-ladder-checkpoints")
-DINO_ID = "timm/vit_small_patch16_dinov3.lvd1689m"
+DINO_ID = "hf-hub:timm/vit_small_patch16_dinov3.lvd1689m"
 DINO_SIZE = 256          # 16x16 patches -> 256 tokens, matches slot_emb
 N_LAYERS, DIM, N_HEADS, FFN, N_SLOTS = 48, 384, 6, 3072, 256
 MOD_VISUAL = 0           # modality_emb row for visual tokens (assumed)
