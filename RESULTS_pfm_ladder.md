@@ -9,7 +9,7 @@ Question inverted from our usual tables: checkpoint order is known by constructi
 Cell colour is the value normalised to the row's own scale (of-30 rows /30, of-4 /4, rates as-is), ramping red (0) → pale-yellow (0.5) → green (1). **Bold = row best** (ties jointly). Colour compares rungs within a row and rough levels across rows; the verdict column is the read.
 
 <table>
-<thead><tr><th>family (metric)</th><th align="center">worst</th><th align="center">low</th><th align="center">middle</th><th align="center">best</th><th align="center">F16</th><th align="center">F4</th><th>ladder verdict</th></tr></thead>
+<thead><tr><th>family (metric)</th><th align="center">worst</th><th align="center">low</th><th align="center">middle</th><th align="center">best</th><th>ladder verdict</th></tr></thead>
 <tbody>
 <tr><td><b>translation (nn adj, raw)</b></td><td align="center" style="background:#df5945;color:#ffffff">0.10</td><td align="center" style="background:#de5743;color:#ffffff">0.09</td><td align="center" style="background:#cbe8a6;color:#0b0b0b">0.61</td><td align="center" style="background:#f6d39e;color:#0b0b0b">0.39</td><td align="center" style="background:#aad996;color:#0b0b0b"><b>0.69</b></td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td>separates strongly; middle>best</td></tr>
 <tr><td><b>rotation (nn adj, raw)</b></td><td align="center" style="background:#dd513f;color:#ffffff">0.08</td><td align="center" style="background:#dc4838;color:#ffffff">0.06</td><td align="center" style="background:#efac82;color:#0b0b0b"><b>0.30</b></td><td align="center" style="background:#dd4d3d;color:#ffffff">0.07</td><td align="center" style="background:#e88968;color:#0b0b0b">0.21</td><td align="center" style="background:#d9392d;color:#ffffff">0.02</td><td>separates; middle≫best</td></tr>
@@ -38,6 +38,28 @@ Cell colour is the value normalised to the row's own scale (of-30 rows /30, of-4
 **2026-08-29 update (job 15324):** cube and basic_color re-run on their v2 designs, count3 added (nested X, X+1, X+3 — constant 1-vs-2-cube gaps). Three reads: (a) cube v2 saturates every rung — controlling path shape out of A-vs-C made the family too easy to rank checkpoints, so prefer v1-era rows or harder position axes for ladder work; (b) basic_color v2 becomes the SECOND perfectly monotone family (after occlusion-mean), and the only one where best beats middle — the fine hue axis may probe whatever "best" was selected on; (c) count3 reproduces middle≫best, and best's pass rate collapses at X≥8 while its margins stay huge at low X.
 
 **2026-08-31 update (job 15735): occlusion re-run on v2** (plate rim inset — the v1 static leak — plus full-turn endpoint and the new suite-wide all-intra `-g 1` encoding that removes shared-history codec residue). The v1 monotone occlusion-mean row does NOT survive: under the clean design `low` (step 1000) is at CEILING (raw 29-30/30, mean 30/30) while middle/best (step 10000) fall to 19/23 mean-cos and 2-5/30 raw, F16 to 0-4. Since every public model (V-JEPA, Qwen, Cosmos, FastWAM, incl. the JEPA predictor readout) is at ~0/30 on v2, pfm-low is the only encoder whose last-second readout retains the IN-WINDOW red reveal (the plate hides at 270°, i.e. ~T/4 = 0.4-0.7s before the end, so red is on camera for the first 0.3-0.6s of the measured window; every public model washes it out) — and continued training destroys it. Note this is early-in-window retention, NOT recall of content outside the window (bounce_void/deform_history test that, and everything including pfm is at chance there). Read with care: it inverts the ladder, like counting_sweep.
+
+## Rank-based ladder summary
+
+Scale-free companion to the AVERAGE rows (a plain score average lets a few big-margin families dominate and lets noise families pad every rung): within each family, rank the four F32 training rungs by row-normalised score (rank 1 = best; ties share the mean rank), then aggregate. F16/F4 are frame-count controls, not training rungs, so they sit out.
+
+**Mean rank (1 = best):**
+
+| task set | worst | low | middle | best |
+|---|---|---|---|---|
+| all current tasks (17) | 2.91 | 2.74 | 2.18 | 2.18 |
+| canonical set (12) | 3.00 | 2.71 | 2.12 | 2.17 |
+
+**Pairwise dominance over the 17 current tasks** — cell = families where ROW strictly beats COLUMN (ties in parens):
+
+| beats → | worst | low | middle | best |
+|---|---|---|---|---|
+| **worst** | — | 8 (0) | 5 (1) | 4 (2) |
+| **low** | 9 (0) | — | 6 (1) | 5 (2) |
+| **middle** | 11 (1) | 10 (1) | — | 8 (2) |
+| **best** | 11 (2) | 10 (2) | 7 (2) | — |
+
+Read: training clearly helps early (low beats worst 9–8, middle beats worst 11–5) but the top of the ladder is genuinely ambiguous — middle vs best is 8–7 with 2 ties suite-wide, and the mean ranks tie at ~2.2. The strong middle-over-best pattern lives in the discriminative families (finding 2); the noise families scatter enough random wins to even the suite-wide count.
 
 ## Findings
 
