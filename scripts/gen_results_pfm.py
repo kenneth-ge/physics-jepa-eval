@@ -91,9 +91,9 @@ ROWS = [
 _SUPERSEDED = ("cube v1", "occlusion v1")
 # The user-designated canonical set (2026-08-31, see RESULTS.md), matched by
 # row-label prefix; latest version of each family.
-_CANONICAL = ("translation", "rotation", "count3", "cube v2", "basic_color v2",
-              "occlusion v2", "basic_position", "roll", "bowl", "bounce_void",
-              "collision", "deform_history")
+_CANONICAL = ("translation", "rotation", "velocity", "count3", "cube v2",
+              "basic_color v2", "occlusion v2", "basic_position", "roll",
+              "bowl", "bounce_void", "collision", "deform_history")
 
 
 def _avg_row(label, keep, verdict):

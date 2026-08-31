@@ -11,6 +11,6 @@ The families that constitute the suite going forward (latest design version of e
 
 - **Fixed-scene contrastive** — bowl, cube v2, basic_color v2, basic_position, roll, occlusion v2
 - **Sweep contrastive** — count3 (nested counting, constant gaps), bounce (void), deform (history), collision
-- **Continuous** — translation, rotation
+- **Continuous** — translation, rotation, velocity
 
 Readout set: flat (raw) vector per model, cos + L1, plus the V-JEPA predictor readout (and V-JEPA mean on continuous); FastWAM under the fixed prompt context. All canonical-family renders use all-intra encoding (`-g 1` in `evals/common/video.py`) from 2026-08-31 on — earlier-encoded families are unaffected where results are negatives (codec residue only inflates scores).
