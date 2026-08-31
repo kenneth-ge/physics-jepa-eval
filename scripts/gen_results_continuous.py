@@ -17,67 +17,74 @@ import pathlib
 # Readouts: raw for every model, plus V-JEPA's mean — the one model whose
 # mean-pooled readout beats its raw one, so it is worth carrying. The other
 # models' mean readouts are not run for continuous evals (they remain
-# registered encoders and are still used by the contrastive suite).
-MODELS = ["VJEPA raw", "VJEPA mean", "Qwen raw", "Cosmos raw", "FastWAM raw"]
+# registered encoders and are still used by the contrastive suite). VJEPA
+# additionally gets its predictor readout (vjepa2_pred_{raw,mean}: the JEPA
+# predictor's forecast of the last-second grid from earlier context), added
+# with the readout-redo job 15725, which also re-encoded fastwam_raw under
+# the fixed prompt context (per-case shifts <=0.08, means <=0.02).
+MODELS = ["VJEPA raw", "VJEPA mean", "VJEPA pred raw", "VJEPA pred mean",
+          "Qwen raw", "Cosmos raw", "FastWAM raw"]
+# The pre-re-framing comparison row predates the pred readout / fastwam redo.
+MODELS_V1 = ["VJEPA raw", "VJEPA mean", "Qwen raw", "Cosmos raw", "FastWAM raw"]
 
-# --- translation: mean over 10 cases, one row per distance (job 9471) --------
+# --- translation: mean over 10 cases, one row per distance (jobs 9471/15725) -
 TRANSLATION_MEAN = [
-    ("nn cos", [0.957, 0.586, 0.707, 1.000, 1.000]),
-    ("nn l1",  [0.929, 0.629, 0.714, 1.000, 1.000]),
+    ("nn cos", [0.957, 0.586, 0.893, 0.671, 0.707, 1.000, 1.000]),
+    ("nn l1",  [0.929, 0.629, 0.921, 0.736, 0.714, 1.000, 1.000]),
 ]
 
 # --- translation per case (L1), 14 interior points each ----------------------
 TRANSLATION_CASES = [
-    ("case_00", [0.929, 0.571, 0.714, 1.000, 1.000]),
-    ("case_01", [1.000, 1.000, 0.714, 1.000, 1.000]),
-    ("case_02", [1.000, 0.071, 0.643, 1.000, 1.000]),
-    ("case_03", [0.714, 0.429, 0.571, 1.000, 1.000]),
-    ("case_04", [0.929, 0.571, 0.643, 1.000, 1.000]),
-    ("case_05", [0.929, 0.857, 0.929, 1.000, 1.000]),
-    ("case_06", [1.000, 0.500, 0.714, 1.000, 1.000]),
-    ("case_07", [0.929, 0.643, 0.714, 1.000, 1.000]),
-    ("case_08", [0.929, 0.857, 0.786, 1.000, 1.000]),
-    ("case_09", [0.929, 0.786, 0.714, 1.000, 1.000]),
+    ("case_00", [0.929, 0.571, 0.929, 0.643, 0.714, 1.000, 1.000]),
+    ("case_01", [1.000, 1.000, 1.000, 0.929, 0.714, 1.000, 1.000]),
+    ("case_02", [1.000, 0.071, 0.714, 0.357, 0.643, 1.000, 1.000]),
+    ("case_03", [0.714, 0.429, 0.929, 0.786, 0.571, 1.000, 1.000]),
+    ("case_04", [0.929, 0.571, 0.857, 0.643, 0.643, 1.000, 1.000]),
+    ("case_05", [0.929, 0.857, 1.000, 0.857, 0.929, 1.000, 1.000]),
+    ("case_06", [1.000, 0.500, 1.000, 0.714, 0.714, 1.000, 1.000]),
+    ("case_07", [0.929, 0.643, 0.857, 0.643, 0.714, 1.000, 1.000]),
+    ("case_08", [0.929, 0.857, 1.000, 0.929, 0.786, 1.000, 1.000]),
+    ("case_09", [0.929, 0.786, 0.929, 0.857, 0.714, 1.000, 1.000]),
 ]
 
-# --- rotation: mean over 10 cases, one row per distance (job 9472) -----------
+# --- rotation: mean over 10 cases, one row per distance (jobs 9472/15725) ----
 ROTATION_MEAN = [
-    ("nn cos", [0.614, 0.121, 0.757, 1.000, 0.900]),
-    ("nn l1",  [0.629, 0.171, 0.914, 1.000, 0.907]),
+    ("nn cos", [0.614, 0.121, 0.471, 0.086, 0.757, 1.000, 0.907]),
+    ("nn l1",  [0.629, 0.171, 0.486, 0.121, 0.914, 1.000, 0.921]),
 ]
 
 # --- rotation per case (L1) --------------------------------------------------
 ROTATION_CASES = [
-    ("case_00", [0.929, 0.143, 1.000, 1.000, 1.000]),
-    ("case_01", [0.857, 0.500, 1.000, 1.000, 0.929]),
-    ("case_02", [0.429, 0.143, 0.857, 1.000, 0.857]),
-    ("case_03", [0.643, 0.071, 0.643, 1.000, 0.714]),
-    ("case_04", [0.429, 0.143, 0.857, 1.000, 0.929]),
-    ("case_05", [0.429, 0.000, 0.929, 1.000, 1.000]),
-    ("case_06", [0.500, 0.214, 0.929, 1.000, 0.929]),
-    ("case_07", [0.643, 0.143, 1.000, 1.000, 1.000]),
-    ("case_08", [0.571, 0.071, 0.929, 1.000, 0.714]),
-    ("case_09", [0.857, 0.286, 1.000, 1.000, 1.000]),
+    ("case_00", [0.929, 0.143, 0.643, 0.143, 1.000, 1.000, 1.000]),
+    ("case_01", [0.857, 0.500, 0.857, 0.357, 1.000, 1.000, 0.929]),
+    ("case_02", [0.429, 0.143, 0.357, 0.071, 0.857, 1.000, 1.000]),
+    ("case_03", [0.643, 0.071, 0.357, 0.000, 0.643, 1.000, 0.714]),
+    ("case_04", [0.429, 0.143, 0.571, 0.071, 0.857, 1.000, 0.857]),
+    ("case_05", [0.429, 0.000, 0.071, 0.000, 0.929, 1.000, 1.000]),
+    ("case_06", [0.500, 0.214, 0.286, 0.071, 0.929, 1.000, 0.929]),
+    ("case_07", [0.643, 0.143, 0.357, 0.000, 1.000, 1.000, 1.000]),
+    ("case_08", [0.571, 0.071, 0.571, 0.143, 0.929, 1.000, 0.786]),
+    ("case_09", [0.857, 0.286, 0.786, 0.357, 1.000, 1.000, 1.000]),
 ]
 
-# --- velocity: mean over 10 cases (job 9552) ---------------------------------
+# --- velocity: mean over 10 cases (jobs 9552/15725) ---------------------------
 VELOCITY_MEAN = [
-    ("nn cos", [0.357, 0.421, 0.529, 0.164, 0.036]),
-    ("nn l1",  [0.407, 0.464, 0.593, 0.221, 0.064]),
+    ("nn cos", [0.357, 0.421, 0.500, 0.479, 0.529, 0.164, 0.043]),
+    ("nn l1",  [0.407, 0.464, 0.536, 0.507, 0.593, 0.221, 0.057]),
 ]
 
 # --- velocity per case (L1) ---------------------------------------------------
 VELOCITY_CASES = [
-    ("case_00", [0.714, 0.500, 0.571, 0.214, 0.143]),
-    ("case_01", [0.143, 0.286, 0.786, 0.357, 0.000]),
-    ("case_02", [0.286, 0.643, 0.643, 0.286, 0.143]),
-    ("case_03", [0.286, 0.429, 0.571, 0.143, 0.071]),
-    ("case_04", [0.357, 0.429, 0.500, 0.071, 0.000]),
-    ("case_05", [0.214, 0.500, 0.429, 0.214, 0.000]),
-    ("case_06", [0.500, 0.286, 0.500, 0.214, 0.071]),
-    ("case_07", [0.643, 0.643, 0.714, 0.214, 0.071]),
-    ("case_08", [0.500, 0.500, 0.714, 0.214, 0.071]),
-    ("case_09", [0.429, 0.429, 0.500, 0.286, 0.071]),
+    ("case_00", [0.714, 0.500, 0.571, 0.571, 0.571, 0.214, 0.071]),
+    ("case_01", [0.143, 0.286, 0.286, 0.286, 0.786, 0.357, 0.000]),
+    ("case_02", [0.286, 0.643, 0.429, 0.643, 0.643, 0.286, 0.071]),
+    ("case_03", [0.286, 0.429, 0.500, 0.643, 0.571, 0.143, 0.071]),
+    ("case_04", [0.357, 0.429, 0.643, 0.500, 0.500, 0.071, 0.000]),
+    ("case_05", [0.214, 0.500, 0.643, 0.500, 0.429, 0.214, 0.071]),
+    ("case_06", [0.500, 0.286, 0.357, 0.429, 0.500, 0.214, 0.071]),
+    ("case_07", [0.643, 0.643, 0.571, 0.571, 0.714, 0.214, 0.071]),
+    ("case_08", [0.500, 0.500, 0.714, 0.500, 0.714, 0.214, 0.071]),
+    ("case_09", [0.429, 0.429, 0.643, 0.429, 0.500, 0.286, 0.071]),
 ]
 
 # --- the same family before re-framing, for comparison (job 9055) ------------
@@ -154,14 +161,16 @@ doc = [
     "interior points, both distances) and V-JEPA2-raw is close behind at "
     "0.93. Qwen-raw resolves only about 5 steps in 7 (0.71), and V-JEPA2's "
     "pooled readout is the weakest at 0.63 — with one case (case_02) "
-    "collapsing to 0.07, i.e. essentially no local ordering at all.\n",
+    "collapsing to 0.07, i.e. essentially no local ordering at all. The "
+    "predictor readout tracks raw here (0.89/0.92): forecasting the "
+    "last-second grid neither helps nor hurts a static spatial axis.\n",
 
     "### Effect of the re-framing\n",
     "This family originally swept ±1.2 m in 0.16 m steps and let cubes leave "
     "the frame near the extremes; it now sweeps ±0.55 m in 0.073 m steps with "
     "every cube framed throughout. Same 10 seeds, same metric — mean nn l1 "
     "before:\n",
-    table(["run"] + MODELS, TRANSLATION_V1_MEAN) + "\n",
+    table(["run"] + MODELS_V1, TRANSLATION_V1_MEAN) + "\n",
     "The step is less than half the size, so the naive expectation was that "
     "every score would fall. Three rose instead: FastWAM-raw 0.68 → 1.00, "
     "V-JEPA2-raw 0.75 → 0.93, Cosmos-raw held at 1.00. Two fell: Qwen-raw "
@@ -214,7 +223,9 @@ doc = [
     "level, with three cases at or near zero. Pooling costs more here than on "
     "translation (0.63), which fits — a rotation changes which cubes are "
     "visible and how they overlap, and a mean-pooled vector keeps almost none "
-    "of the spatial arrangement needed to order those views.\n",
+    "of the spatial arrangement needed to order those views. The predictor "
+    "readout also degrades vs raw (0.47/0.49 vs 0.61/0.63): the forecast "
+    "keeps less of the fine occlusion/face detail an orbit ordering needs.\n",
     "Cosine and L1 diverge more on this family than on translation, most "
     "visibly for Qwen-raw (0.76 cos vs 0.91 l1). Where the two disagree, the "
     "ranking should be treated as softer than the single numbers suggest.\n",
@@ -239,7 +250,10 @@ doc = [
     "Qwen-raw 0.53/0.59, then V-JEPA2 — whose pooled readout beats its raw "
     "grid here (0.42/0.46 vs 0.36/0.41), echoing the contrastive roll "
     "finding that pooling helps on motion axes where raw position "
-    "alignment is a distraction. The axis inverts translation's ranking "
+    "alignment is a distraction. The predictor readout is V-JEPA's best on "
+    "this axis (0.50/0.54, job 15725) — forecasting the last second forces "
+    "speed into the representation, the continuous counterpart of pred "
+    "recovering contrastive roll from 0/30. The axis inverts translation's ranking "
     "(Cosmos 1.00 → 0.16, FastWAM 1.00 → 0.04): speed and viewpoint are "
     "separable capabilities, and no model comes near saturation, so this "
     "family has headroom the re-framed translation lacks.\n",

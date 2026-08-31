@@ -1,0 +1,60 @@
+name: kenny-fastwam-bounce-void
+
+# FastWAM on bounce_void as a LEAK CONTROL. The family is history-only by
+# design (the measured last second is an empty sheet for A, B and C), so a
+# last-frame model must sit at/below chance; anything above chance means a
+# static end-frame cue survives (cf. occlusion, where fastwam_z_raw hit 30/30
+# off a single frame). The volume's bounce_void was rendered MONO and FastWAM
+# is the 2-cam checkpoint (falls back to duplicating the left frame), so this
+# renders a bounce_void_stereo root (same seeds -> same physics) and encodes
+# there, under the fixed prompt context.
+#   sky jobs launch -n kenny-fastwam-bounce-void -y jobs/contrastive/fastwam_bounce_void.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy pillow
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  ROOT=/data/videos/bounce_void_stereo
+
+  echo "=== render bounce_void sweep (stereo) ==="
+  rm -rf $ROOT
+  python -m evals.contrastive.render_bounce_void --out-root $ROOT --rig stereo
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    export FASTWAM_CTX=/data/fastwam/fixed_ctx.pt
+
+    [ -f "$FASTWAM_CTX" ] || PYTHONPATH=. python scripts/make_fastwam_context.py --out "$FASTWAM_CTX"
+
+    echo "=== fastwam precompute bounce_void_stereo ==="
+    python -m evals.precompute --root $ROOT --recursive --clips A B C --encoders fastwam_raw
+  ) || echo "FASTWAM STEP FAILED"
+
+  echo "=== TABLE: bounce_void_stereo (fastwam control) ==="
+  python -m evals.contrastive.aggregate_bounce --root $ROOT --encoders saved:fastwam_raw

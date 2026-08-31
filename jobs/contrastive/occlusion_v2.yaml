@@ -1,0 +1,93 @@
+name: kenny-occlusion-v2
+
+# occlusion v2 re-render + full re-encode. v1 had a static end-frame leak:
+# the red back plate protruded 13mm past the back face, so the angled `right`
+# stereo camera saw a red rim strip in EVERY frame (only FastWAM consumes the
+# stereo view — hence fastwam z_raw 30/30 from a single frame); clips also
+# stopped one frame short of the full turn. v2 (evals/contrastive/occlusion.py):
+# plate inset to 2mm proud, T quantised to whole frames + endpoint included —
+# A/B/C final frames verified pixel-identical across all 30 cases x both cams.
+# Fresh root (rm -rf) so no v1 vectors survive next to v2 clips. Re-encodes
+# every model incl. the PFM ladder (RESULTS_pfm_ladder.md occlusion rows
+# inherit the v1 caveat) and prints all tables.
+#   sky jobs launch -n kenny-occlusion-v2 -y jobs/contrastive/occlusion_v2.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  MUJOCO_GL: egl
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq libegl1 libgl1 libosmesa6 libglib2.0-0 ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate mujoco "imageio[ffmpeg]" numpy pillow timm
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e   # one model failing must not abort the rest
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  ROOT=/data/videos/occlusion
+  PFME="pfm_worst_raw pfm_worst_mean pfm_low_raw pfm_low_mean \
+        pfm_middle_raw pfm_middle_mean pfm_best_raw pfm_best_mean \
+        pfm_f16_raw pfm_f16_mean pfm_f4_raw pfm_f4_mean"
+
+  echo "=== render occlusion v2 (stereo, fresh root) ==="
+  rm -rf $ROOT
+  python -m evals.contrastive.occlusion --out-root $ROOT --rig stereo
+
+  echo "=== vjepa precompute (raw/mean/pred) ==="
+  python -m evals.precompute --root $ROOT --clips A B C \
+      --encoders vjepa2_raw vjepa2_mean vjepa2_pred_raw vjepa2_pred_mean
+
+  echo "=== pfm ladder precompute ==="
+  python -m evals.precompute --root $ROOT --clips A B C --encoders $PFME
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen precompute ==="
+    python -m evals.precompute --root $ROOT --clips A B C --encoders qwen3vl_raw qwen3vl_mean
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute ==="
+    python -m evals.precompute --root $ROOT --clips A B C --encoders cosmos_raw cosmos_mean
+  ) || echo "COSMOS STEP FAILED"
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    export FASTWAM_CTX=/data/fastwam/fixed_ctx.pt
+    [ -f "$FASTWAM_CTX" ] || PYTHONPATH=. python scripts/make_fastwam_context.py --out "$FASTWAM_CTX"
+    echo "=== fastwam precompute (action tap + z taps: z_raw is the leak detector) ==="
+    python -m evals.precompute --root $ROOT --clips A B C --encoders \
+        fastwam_raw fastwam_mean fastwam_z_raw fastwam_z_mean fastwam_zf_raw fastwam_zf_mean
+  ) || echo "FASTWAM STEP FAILED"
+
+  echo "=== TABLE: occlusion v2 (main models) ==="
+  python -m evals.contrastive.measure --root $ROOT --encoders \
+      saved:vjepa2_raw saved:vjepa2_pred_raw saved:qwen3vl_raw \
+      saved:cosmos_raw saved:fastwam_raw
+
+  echo "=== TABLE: occlusion v2 (fastwam z taps — leak check, v1 z_raw was 30/30) ==="
+  python -m evals.contrastive.measure --root $ROOT --encoders \
+      saved:fastwam_z_raw saved:fastwam_z_mean saved:fastwam_zf_raw saved:fastwam_zf_mean
+
+  echo "=== TABLE: occlusion v2 (pfm ladder) ==="
+  python -m evals.contrastive.measure --root $ROOT --encoders \
+      $(for e in $PFME; do printf 'saved:%s ' $e; done)

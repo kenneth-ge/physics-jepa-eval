@@ -30,7 +30,7 @@ FIXED = [
     ("basic_color v2 (30)",    [0.93, 0.93, 0.90, 0.90, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00]),
     ("basic_position (30)",    [0.97, 0.97, 1.00, 1.00, 0.97, 0.97, 1.00, 0.97, 1.00, 1.00]),
     ("roll (30)",              [0.00, 0.00, 0.43, 0.40, 0.77, 0.83, 0.93, 0.97, 0.40, 0.43]),
-    ("occlusion (30)",         [0.00, 0.00, 0.00, 0.00, 0.17, 0.13, 0.80, 0.83, 0.70, 0.70]),
+    ("occlusion v2 (30)",      [0.00, 0.00, 0.00, 0.00, 0.07, 0.03, 0.00, 0.00, 0.00, 0.00]),
 ]
 
 # --- basic_counting: disjoint layouts, X+1 vs X (Cosmos/FastWAM measured) ----
@@ -106,12 +106,31 @@ COLLISION = [
     (2.00, [0.00, 0.00, 0.75, 0.62, 1.00, 0.88, 1.00, 1.00]),
 ]
 
-# --- bounce VOID: signal only in history; V-JEPA + Qwen only -----------------
+# --- bounce VOID: signal only in history. V-JEPA/Qwen on the mono root;
+# Cosmos/FastWAM added 2026-08-31 as LEAK CONTROLS on bounce_void_stereo
+# (same seeds -> same physics; jobs 15733 / 15729, FastWAM under fixed ctx) ---
 BOUNCE_VOID = [
-    (0.50, [0.00, 0.00, 0.12, 0.00]), (0.70, [0.00, 0.00, 0.00, 0.00]),
-    (0.85, [0.00, 0.00, 0.00, 0.00]), (1.00, [0.00, 0.00, 0.00, 0.00]),
-    (1.20, [0.00, 0.00, 0.00, 0.00]), (1.50, [0.00, 0.00, 0.00, 0.00]),
-    (1.75, [0.00, 0.00, 0.00, 0.00]), (2.00, [0.00, 0.00, 0.12, 0.12]),
+    (0.50, [0.00, 0.00, 0.12, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (0.70, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (0.85, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (1.20, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (1.50, [0.00, 0.00, 0.00, 0.00, 0.00, 0.12, 0.12, 0.00]),
+    (1.75, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (2.00, [0.00, 0.00, 0.12, 0.12, 0.00, 0.00, 0.12, 0.12]),
+]
+
+# --- deform HISTORY: same end image, signal only in the squash history
+# (scored 2026-08-31 on kenny-dev from the saved vectors; all-model table) ----
+DEFORM_HIST = [
+    (0.50, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.50, 0.38]),
+    (0.70, [0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 0.25, 0.25]),
+    (0.85, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.50, 0.12]),
+    (1.00, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]),
+    (1.20, [0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 0.12, 0.00]),
+    (1.50, [0.00, 0.00, 0.00, 0.00, 0.12, 0.00, 0.38, 0.25]),
+    (1.75, [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.25, 0.25]),
+    (2.00, [0.00, 0.00, 0.00, 0.00, 0.12, 0.12, 0.25, 0.25]),
 ]
 
 def with_pred_zeros(rows):
@@ -189,6 +208,39 @@ doc.append("FastWAM re-encoded from scratch (job 15391) under the corrected "
            "family has a static end-frame cue (action tap 21/30 was already "
            "above chance) — it is not history-only for pixel-faithful "
            "readouts.\n")
+doc.append("**2026-08-31 occlusion leak identified + v2 fix (table above is "
+           "still v1).** The static cue is the red plate's rim: it protruded "
+           "13mm past the back face, so the angled `right` stereo camera saw "
+           "a thin red strip on the cube's edge in EVERY frame — including "
+           "the last (~40 px even at a perfect 360°; verified by raw "
+           "re-render). Only FastWAM consumes the stereo view, which is why "
+           "only its readouts went above chance while the `fixed`-camera "
+           "final frames are pixel-identical A-vs-C (raw render; mp4 diffs "
+           "are pure codec noise — raw-pixel last-frame invariant on A.mp4 "
+           "is 11/30 L1, 2/30 cos, i.e. no mono leak, so Cosmos 0.80 came "
+           "through the clip, not a last-frame cue). Secondary v1 bug, also "
+           "fixed: clips stopped one frame short of the full turn (A/C ended "
+           "~356°, A vs B end poses differed ~1°). occlusion v2: plate inset "
+           "to 2mm proud (0.3mm z-fights and deletes the reveal in 4/30 "
+           "cases; ≥5mm leaks again; 1–3mm clean), T quantised to whole "
+           "frames with endpoint included. Verified across all 30 cases × "
+           "{fixed, right}: A/B/C final frames pixel-identical (ANY-diff "
+           "threshold), mid-spin reveal ≥481 px. Occlusion rows here and in "
+           "the PFM ladder need re-render + re-encode under v2 before being "
+           "read as history-only.\n")
+doc.append("**2026-08-31 occlusion v2 MEASURED (job 15735; v2 geometry + "
+           "all-intra `-g 1` encoding, now the suite-wide default in "
+           "evals/common/video.py — H.264 inter prediction otherwise leaves "
+           "shared-history codec residue that pixel-faithful readouts can "
+           "score on).** The table above shows v2. The leak is gone: "
+           "fastwam z_raw fell 30/30 → 0/30, and every promoted readout of "
+           "every model is now at ~0 (Qwen 2/30 cos is the only nonzero "
+           "cell). Notable casualty: Cosmos fell 0.80 → 0.00 — its v1 score "
+           "matched the measured v1 codec-residue pixel invariant on the "
+           "fixed cam (23/30) almost exactly, so it was reading compression "
+           "residue, not the clip. occlusion v2 is therefore a clean "
+           "history-only negative for all four models, consistent with "
+           "bounce (void) and deform (history).\n")
 
 doc.append("## basic_counting — disjoint layouts, sweep over count X\n")
 doc.append(table(["X", "Cosmos cos", "Cosmos L1", "FastWAM cos", "FastWAM L1"],
@@ -220,8 +272,17 @@ doc.append(table(["factor"] + COLS8,
                  [(f"{f:.2f}", v) for f, v in with_pred_zeros(DEFORM_ADJ)]) + "\n")
 doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly; "
            "whole-clip models (V-JEPA, Qwen) wash it out. deform (history) — same "
-           "end image, signal only in the squash history — is uniformly at/below "
-           "chance for every model (like bounce void).\n")
+           "end image, signal only in the squash history — has its own table "
+           "below.\n")
+
+doc.append("## deform (history) — same end image, signal only in the squash "
+           "history; sweep k2/k1 (1.00 = control C≡A)\n")
+doc.append(table(["factor"] + COLS8,
+                 [(f"{f:.2f}", v) for f, v in with_pred_zeros(DEFORM_HIST)]) + "\n")
+doc.append("Uniformly at/below chance for every model (like bounce void). "
+           "FastWAM's 0.38–0.50 cells hover around chance but its mean "
+           "normalized L1 margin is negative at every factor (−0.02 to "
+           "−0.12) — noise, not signal.\n")
 
 doc.append("## collision — MASS via momentum transfer; matched impact momentum "
            "(A,B) vs much heavier target (C); sweep m2/m (1.00 = control C≡A)\n")
@@ -233,16 +294,20 @@ doc.append("FastWAM reads the collision outcome cleanly (rebound vs target "
            "split; whole-clip models (V-JEPA, Qwen) at/below chance except "
            "Qwen at the extremes.\n")
 
-doc.append("## bounce (void) — signal only in history (V-JEPA + Qwen), sweep r2/r1\n")
-doc.append(table(["factor", "VJEPA cos", "VJEPA L1", "VJEPA pred cos",
-                  "VJEPA pred L1", "Qwen cos", "Qwen L1"],
+doc.append("## bounce (void) — signal only in history, sweep r2/r1\n")
+doc.append(table(["factor"] + COLS8,
                  [(f"{f:.2f}", v) for f, v in with_pred_zeros(BOUNCE_VOID)]) + "\n")
 doc.append("Whole-clip attention does **not** recover a history-only signal at "
            "the last-second readout — at/below chance at every factor. The "
            "VJEPA predictor readout (leak-free here: A/B/C last seconds are "
            "identical, so only history can reach the forecast) is ALSO at "
            "zero — even the predictor does not forecast different end states "
-           "from different histories. Same for deform_history.\n")
+           "from different histories. Same for deform_history. Cosmos and "
+           "FastWAM added 2026-08-31 as leak controls (jobs 15733/15729, on "
+           "the stereo re-render bounce_void_stereo — same seeds, same "
+           "physics; FastWAM under the fixed prompt context): both at/below "
+           "chance with negative margins at every factor, so unlike occlusion "
+           "v1 this family has NO static end-frame cue.\n")
 
 pathlib.Path("RESULTS_contrastive.md").write_text("\n".join(doc))
 print("wrote RESULTS_contrastive.md")

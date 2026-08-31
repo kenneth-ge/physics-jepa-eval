@@ -45,9 +45,16 @@ ROWS = [
      [22, 23, 27, 30, 30, 29], "n",
      "<b>monotone worst&lt;low&lt;middle&lt;best</b> — at the fixed 0.04 hue "
      "gap, best finally outranks middle (v1: 15→26, middle>best)"),
-    ("occlusion (of 30, mean)", 30.0,
+    ("occlusion v1 (of 30, mean; leaky design)", 30.0,
      [16, 27, 28, 29, 16, 13], "n",
-     "<b>monotone worst&lt;low&lt;middle&lt;best</b>"),
+     "was the monotone showcase — but v1 had a stereo rim leak + codec "
+     "residue (see RESULTS_contrastive.md), so this ordering is tainted"),
+    ("occlusion v2 (of 30, mean cos; job 15735)", 30.0,
+     [16, 30, 19, 23, 4, 24], "n",
+     "v1 monotonicity DEAD under the fixed design: low at ceiling (30/30, "
+     "raw too: 29-30), middle/best drop to 19/23, F16 0-4 — the only "
+     "encoders anywhere to crack a verified history-only family, and "
+     "training past step 1000 LOSES it"),
     ("basic_position (of 30, raw)", 30.0,
      [21, 23, 26, 23, 25, 20], "n",
      "weak"),
@@ -145,6 +152,17 @@ doc = [
     "hue axis may probe whatever \"best\" was selected on; (c) count3 "
     "reproduces middle≫best, and best's pass rate collapses at X≥8 while "
     "its margins stay huge at low X.\n",
+    "**2026-08-31 update (job 15735): occlusion re-run on v2** (plate rim "
+    "inset — the v1 static leak — plus full-turn endpoint and the new "
+    "suite-wide all-intra `-g 1` encoding that removes shared-history codec "
+    "residue). The v1 monotone occlusion-mean row does NOT survive: under "
+    "the clean design `low` (step 1000) is at CEILING (raw 29-30/30, mean "
+    "30/30) while middle/best (step 10000) fall to 19/23 mean-cos and 2-5/30 "
+    "raw, F16 to 0-4. Since every public model (V-JEPA, Qwen, Cosmos, "
+    "FastWAM, incl. the JEPA predictor readout) is at ~0/30 on v2, pfm-low "
+    "is the only encoder in the whole suite that retains the mid-clip red "
+    "reveal in a last-second readout — and continued training destroys it. "
+    "Read with care: it inverts the ladder, like counting_sweep.\n",
     "## Findings\n",
     "1. **The suite does discriminate the ladder.** worst/low sit at the "
     "floor and step-10000 checkpoints clearly above it wherever there is "
@@ -156,7 +174,8 @@ doc = [
     "final position, so the step-10000 gains there are speed encoding, not "
     "statics.\n",
     "2. **Consistent anomaly: `middle` outranks `best`** on every "
-    "discriminative family except occlusion-mean. middle and best are BOTH "
+    "discriminative family except basic_color v2 (occlusion v1's exception "
+    "was retracted with the v2 re-run). middle and best are BOTH "
     "step 10000 and differ only in visual-pathway tensors — so per our "
     "latent probe, middle's visual pathway is the stronger representation. "
     "Worth asking Mo/Sambhav what \"best\" was selected on (plausibly "
@@ -168,12 +187,13 @@ doc = [
     "nearer 16 frames, or that the F-axis isn't degrading what our evals "
     "measure. F4 lands near the floor on continuous families (0.07/0.02). "
     "Untangle by re-running f16 at PFM_FRAMES=32 (cheap, vectors only).\n",
-    "4. **occlusion splits by readout**: mean is near-perfect and the ONLY "
-    "perfectly monotone family (16<27<28<29); raw *collapses* for the "
-    "trained checkpoints (middle 7, best 9, f16 1 of 30) — "
-    "variable-duration B=2× interacts with position-aligned latents. "
-    "Raw-vs-mean dissociation again carries information about what the "
-    "trunk encodes.\n",
+    "4. **occlusion (v2) is the suite's strangest row**: the v1 monotone "
+    "showcase was leak/residue-tainted; under the clean v2 design pfm-low "
+    "alone sits at ceiling (29-30/30 both readouts) on a family every "
+    "public model scores ~0/30 on — genuine mid-clip history retained in a "
+    "last-second readout — and the step-10000 checkpoints largely lose it "
+    "(raw 2-5/30). Whatever step 1000 keeps about recent visual history, "
+    "further training trades away.\n",
     "5. **PFM shares the universal failures** of the four public models: "
     "cardinality (counting_sweep X≥3), history-only signals (bounce_void), "
     "mass (collision), stiffness (deform) — at every rung, so these "

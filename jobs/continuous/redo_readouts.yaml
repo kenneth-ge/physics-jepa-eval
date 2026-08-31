@@ -1,0 +1,85 @@
+name: kenny-continuous-redo
+
+# Bring the continuous families (translation/rotation/velocity) onto the same
+# readout set as the contrastive tables (commit 7ed9c63):
+#   1. vjepa2_pred_{raw,mean} — JEPA predictor forecast of the last-second
+#      grid (new columns; never computed for continuous).
+#   2. fastwam_raw re-encoded under the FIXED cached prompt context — the old
+#      vectors used the zeros context (all-padding prompt, structurally OOD).
+# No re-render: the clips on the volume are the current geometry (jobs
+# 9471/9472/9552); precompute overwrites vectors in place. qwen/cosmos/vjepa
+# raw+mean vectors are untouched (their encoders did not change).
+#   sky jobs launch -n kenny-continuous-redo -y jobs/continuous/redo_readouts.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+  bash scripts/setup_fastwam.sh
+  bash scripts/setup_fastwam_stage2.sh
+
+run: |
+  set +e   # one model failing must not abort the rest
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+
+  clips_for() {
+    case $1 in
+      translation) printf 't_%02d ' $(seq 0 15);;
+      rotation)    printf 'r_%02d ' $(seq 0 15);;
+      velocity)    printf 'v_%02d ' $(seq 0 15);;
+    esac
+  }
+
+  echo "=== determinism / smoke check (vjepa pred) ==="
+  V=$(find /data/videos/translation -name 't_00.mp4' | head -1)
+  PYTHONPATH=. python scripts/check_encoder_determinism.py vjepa2_pred_raw "$V"
+
+  for R in translation rotation velocity; do
+    CLIPS=$(clips_for $R)
+    echo "=== vjepa pred precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips $CLIPS \
+        --encoders vjepa2_pred_raw vjepa2_pred_mean
+  done
+
+  ( source /data/fastwam/venv/bin/activate
+    export FASTWAM_CONFIG=/data/fastwam/FastWAM/configs/model/fastwam.yaml
+    export FASTWAM_CKPT=/data/fastwam/FastWAM/checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    export DIFFSYNTH_MODEL_BASE_PATH=/data/fastwam/FastWAM/checkpoints
+    export FASTWAM_CTX=/data/fastwam/fixed_ctx.pt
+
+    echo "=== build fixed prompt context (once) ==="
+    [ -f "$FASTWAM_CTX" ] || PYTHONPATH=. python scripts/make_fastwam_context.py --out "$FASTWAM_CTX"
+
+    echo "=== determinism check (fastwam fixed ctx) ==="
+    PYTHONPATH=. python scripts/check_encoder_determinism.py fastwam_raw "$V"
+
+    for R in translation rotation velocity; do
+      CLIPS=$(clips_for $R)
+      echo "=== fastwam precompute $R (fixed ctx, overwrites zeros-ctx vectors) ==="
+      python -m evals.precompute --root /data/videos/$R --clips $CLIPS --encoders fastwam_raw
+    done
+  ) || echo "FASTWAM STEP FAILED"
+
+  for R in translation rotation velocity; do
+    echo "=== CONTINUOUS TABLES: $R (new readout set) ==="
+    python -m evals.continuous.measure --root /data/videos/$R --encoders \
+        saved:vjepa2_raw saved:vjepa2_mean saved:vjepa2_pred_raw saved:vjepa2_pred_mean \
+        saved:qwen3vl_raw saved:cosmos_raw saved:fastwam_raw
+  done

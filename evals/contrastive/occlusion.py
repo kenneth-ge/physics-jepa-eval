@@ -1,9 +1,21 @@
-"""occlusion eval family: a back face revealed only mid-spin.
+"""occlusion eval family (v2): a back face revealed only mid-spin.
 
 A kinematic cube (mocap) spins about the vertical axis. It starts blue-front
 with a RED plate on its BACK face (facing away, occluded); the red swings into
 view at the half-turn and is hidden again by the end, so every clip STARTS and
 ENDS on the blue side.
+
+v2 closes the static end-frame leak found in v1 (RESULTS_contrastive.md, job
+15391: fastwam z_raw 30/30 from a single frame). Two v1 bugs:
+  1. The plate protruded 13mm past the back face, so its red rim was visible
+     from the angled `right` stereo camera in EVERY frame, including the last
+     (~40 px even at a perfect 360). v2 insets the plate flush (outer surface
+     2mm proud: above depth-buffer precision, sub-pixel from every rig camera).
+  2. Clips stopped one frame short of the full turn (A/C ended ~356 deg, and
+     A vs B end poses differed ~1 deg). v2 quantises T to whole frames and
+     includes the endpoint, so A/B/C all end EXACTLY blue-front.
+With both fixes the A/C final frames are pixel-identical on every rig camera
+(verified across all 30 cases), so the red-vs-no-red signal is history-only.
 
   A: blue cube with a RED back face, rotates 360 degrees (red revealed once).
   B: same red-backed cube, rotates 720 degrees at the SAME speed (red revealed
@@ -44,7 +56,12 @@ PSI0 = 0.0      # start (and, after full turns, end) blue-front: red plate on
 
 def cube_body(half, plate_rgba, center):
     p = half * 0.98
-    off = half + 0.007
+    # Flush plate: outer surface 2mm proud of the back face. v1's +0.007
+    # offset protruded the rim past the silhouette, leaking plate colour to
+    # the angled cameras even when facing away. Scanned 0.3/1/2/3/5mm:
+    # <=0.3mm z-fights (plate vanishes in 4/30 cases), >=5mm leaks again;
+    # 1-3mm give zero end-frame diff px on both rig cameras in all 30 cases.
+    off = half - 0.006 + 0.002
     cx, cy, cz = center
     return (f'<body name="cube" mocap="true" pos="{cx:.3f} {cy:.3f} {cz:.3f}">'
             f'<geom type="box" size="{half} {half} {half}" rgba="{fr(BLUE)}" '
@@ -58,9 +75,12 @@ def _quat_z(angle_deg):
     return np.array([math.cos(a), 0.0, 0.0, math.sin(a)])
 
 
-def build_case(i):
+def build_case(i, fps=25):
     rng = np.random.default_rng([SEED_BASE, i])
-    T = float(rng.uniform(1.6, 2.8))          # A/C duration; B is 2T (same speed)
+    # A/C duration; B is 2T (same speed). Quantised to a whole number of
+    # frames so the rendered clips (endpoint included) end EXACTLY on the
+    # full turn — v1 stopped one frame short (~356 deg, and A vs B differed).
+    T = round(float(rng.uniform(1.6, 2.8)) * fps) / fps
     direction = float(rng.choice([-1.0, 1.0]))
     half = float(rng.uniform(0.15, 0.22))
     center = (float(rng.uniform(-0.5, 0.5)), float(rng.uniform(-0.15, 0.15)), 0.45)
@@ -79,7 +99,9 @@ def render_variant(out_dir, name, dur, plate, params, args):
         bodies=cube_body(params["half"], plate, params["center"]),
         extra_cameras_xml=cameras.extra_cameras_xml(args.rig)))
     omega = 360.0 / params["T"]               # deg/s, shared by A/B/C
-    times = np.arange(int(round(dur * args.fps))) / args.fps
+    # Endpoint INCLUDED: T is a whole number of frames, so the final frame
+    # lands exactly on the full turn (blue-front) for A, B and C alike.
+    times = np.arange(int(round(dur * args.fps)) + 1) / args.fps
 
     def advance(d, i):
         a = PSI0 + params["direction"] * omega * times[i]
@@ -95,7 +117,7 @@ def render_variant(out_dir, name, dur, plate, params, args):
 
 
 def generate(i, out_dir, args):
-    params, variants = build_case(i)
+    params, variants = build_case(i, args.fps)
     print(f"case_{i:02d}: T={params['T']:.2f}s (A/C 360°, B 720° @ same speed) "
           f"dir={params['direction']:+.0f} half={params['half']:.2f} "
           f"center={tuple(round(c, 2) for c in params['center'])}")

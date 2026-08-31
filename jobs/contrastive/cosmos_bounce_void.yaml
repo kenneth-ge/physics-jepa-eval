@@ -1,0 +1,45 @@
+name: kenny-cosmos-bounce-void
+
+# Cosmos on bounce_void as the second LEAK CONTROL (companion to
+# kenny-fastwam-bounce-void, job 15729): last-5-frames model on a family whose
+# measured last second is an empty sheet for A, B and C — must sit at/below
+# chance; above chance = static end-frame cue. Encode-only: reads the
+# bounce_void_stereo root rendered by job 15729 (same seeds as the mono
+# bounce_void the V-JEPA/Qwen rows use).
+#   sky jobs launch -n kenny-cosmos-bounce-void -y jobs/contrastive/cosmos_bounce_void.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+  bash scripts/setup_cosmos.sh
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  ROOT=/data/videos/bounce_void_stereo
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos precompute bounce_void_stereo ==="
+    python -m evals.precompute --root $ROOT --recursive --clips A B C --encoders cosmos_raw
+  ) || echo "COSMOS STEP FAILED"
+
+  echo "=== TABLE: bounce_void_stereo (cosmos control) ==="
+  python -m evals.contrastive.aggregate_bounce --root $ROOT --encoders saved:cosmos_raw
