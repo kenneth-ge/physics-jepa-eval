@@ -53,8 +53,8 @@ ROWS = [
      [16, 30, 19, 23, 4, 24], "n",
      "v1 monotonicity DEAD under the fixed design: low at ceiling (30/30, "
      "raw too: 29-30), middle/best drop to 19/23, F16 0-4 — the only "
-     "encoders anywhere to crack a verified history-only family, and "
-     "training past step 1000 LOSES it"),
+     "encoder to retain the early-in-window reveal (red visible until ~T/4 "
+     "before the end), and training past step 1000 LOSES it"),
     ("basic_position (of 30, raw)", 30.0,
      [21, 23, 26, 23, 25, 20], "n",
      "weak"),
@@ -160,9 +160,14 @@ doc = [
     "30/30) while middle/best (step 10000) fall to 19/23 mean-cos and 2-5/30 "
     "raw, F16 to 0-4. Since every public model (V-JEPA, Qwen, Cosmos, "
     "FastWAM, incl. the JEPA predictor readout) is at ~0/30 on v2, pfm-low "
-    "is the only encoder in the whole suite that retains the mid-clip red "
-    "reveal in a last-second readout — and continued training destroys it. "
-    "Read with care: it inverts the ladder, like counting_sweep.\n",
+    "is the only encoder whose last-second readout retains the IN-WINDOW "
+    "red reveal (the plate hides at 270°, i.e. ~T/4 = 0.4-0.7s before the "
+    "end, so red is on camera for the first 0.3-0.6s of the measured "
+    "window; every public model washes it out) — and continued training "
+    "destroys it. Note this is early-in-window retention, NOT recall of "
+    "content outside the window (bounce_void/deform_history test that, and "
+    "everything including pfm is at chance there). Read with care: it "
+    "inverts the ladder, like counting_sweep.\n",
     "## Findings\n",
     "1. **The suite does discriminate the ladder.** worst/low sit at the "
     "floor and step-10000 checkpoints clearly above it wherever there is "
@@ -190,10 +195,11 @@ doc = [
     "4. **occlusion (v2) is the suite's strangest row**: the v1 monotone "
     "showcase was leak/residue-tainted; under the clean v2 design pfm-low "
     "alone sits at ceiling (29-30/30 both readouts) on a family every "
-    "public model scores ~0/30 on — genuine mid-clip history retained in a "
-    "last-second readout — and the step-10000 checkpoints largely lose it "
-    "(raw 2-5/30). Whatever step 1000 keeps about recent visual history, "
-    "further training trades away.\n",
+    "public model scores ~0/30 on — early-in-window content (the red "
+    "reveal, visible until ~T/4 before the end) retained in a last-second "
+    "readout — and the step-10000 checkpoints largely lose it (raw 2-5/30). "
+    "Whatever step 1000 keeps about recent visual history, further training "
+    "trades away.\n",
     "5. **PFM shares the universal failures** of the four public models: "
     "cardinality (counting_sweep X≥3), history-only signals (bounce_void), "
     "mass (collision), stiffness (deform) — at every rung, so these "

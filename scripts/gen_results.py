@@ -239,8 +239,13 @@ doc.append("**2026-08-31 occlusion v2 MEASURED (job 15735; v2 geometry + "
            "matched the measured v1 codec-residue pixel invariant on the "
            "fixed cam (23/30) almost exactly, so it was reading compression "
            "residue, not the clip. occlusion v2 is therefore a clean "
-           "history-only negative for all four models, consistent with "
-           "bounce (void) and deform (history).\n")
+           "negative for all four models. Scope nuance: the red plate is "
+           "still on camera for the first ~0.3-0.6s of the measured window "
+           "(it hides at 270°, ~T/4 before the end), so v2 tests whether a "
+           "last-second readout retains EARLY-IN-WINDOW content — which "
+           "every public model washes out — not out-of-window recall; "
+           "bounce (void) and deform (history) remain the strict "
+           "history-only families.\n")
 
 doc.append("## basic_counting — disjoint layouts, sweep over count X\n")
 doc.append(table(["X", "Cosmos cos", "Cosmos L1", "FastWAM cos", "FastWAM L1"],
