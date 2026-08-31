@@ -87,6 +87,32 @@ ROWS = [
      "(+0.18 raw/+0.48 mean @2.0) — weak hint"),
 ]
 
+# Superseded rows are kept in the table for history but excluded from means.
+_SUPERSEDED = ("cube v1", "occlusion v1")
+# The user-designated canonical set (2026-08-31, see RESULTS.md), matched by
+# row-label prefix; latest version of each family.
+_CANONICAL = ("translation", "rotation", "count3", "cube v2", "basic_color v2",
+              "occlusion v2", "basic_position", "roll", "bowl", "bounce_void",
+              "collision", "deform_history")
+
+
+def _avg_row(label, keep, verdict):
+    rows = [r for r in ROWS if keep(r[0])]
+    vals = [round(sum(r[2][i] / r[1] for r in rows) / len(rows), 3)
+            for i in range(6)]
+    return (f"{label} [{len(rows)} rows]", 1.0, vals, "r", verdict)
+
+
+ROWS.append(_avg_row(
+    "AVERAGE — all current tasks",
+    lambda l: not l.startswith(_SUPERSEDED),
+    "mean of each row normalised to its own scale; superseded v1 rows "
+    "excluded"))
+ROWS.append(_avg_row(
+    "AVERAGE — canonical set",
+    lambda l: l.startswith(_CANONICAL),
+    "same, over the canonical families only (RESULTS.md 2026-08-31)"))
+
 MID_AT = 0.50
 BAD, MID, GOOD = (215, 48, 39), (255, 255, 191), (26, 152, 80)
 
