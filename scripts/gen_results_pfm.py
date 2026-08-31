@@ -129,28 +129,28 @@ def _rank_stats(rows):
 
 
 def _rank_section():
-    base = [r for r in ROWS
-            if not r[0].startswith(_SUPERSEDED + ("AVERAGE",))]
-    canon = [r for r in base if r[0].startswith(_CANONICAL)]
-    mr_all, wins = _rank_stats(base)
-    mr_can, _ = _rank_stats(canon)
-    fmt = lambda mr: " | ".join(f"{v:.2f}" for v in mr)
+    canon = [r for r in ROWS
+             if not r[0].startswith(_SUPERSEDED + ("AVERAGE",))
+             and r[0].startswith(_CANONICAL)]
+    mr, wins = _rank_stats(canon)
     lines = [
-        "## Rank-based ladder summary\n",
+        "## Rank-based ladder summary (canonical set)\n",
         "Scale-free companion to the AVERAGE rows (a plain score average "
         "lets a few big-margin families dominate and lets noise families "
-        "pad every rung): within each family, rank the four F32 training "
-        "rungs by row-normalised score (rank 1 = best; ties share the mean "
-        "rank), then aggregate. F16/F4 are frame-count controls, not "
-        "training rungs, so they sit out.\n",
+        "pad every rung): within each canonical family (RESULTS.md "
+        "2026-08-31), rank the four F32 training rungs by row-normalised "
+        "score (rank 1 = best; ties share the mean rank), then aggregate. "
+        "F16/F4 are frame-count controls, not training rungs, so they sit "
+        "out; non-canonical rows are excluded throughout.\n",
         "**Mean rank (1 = best):**\n",
         "| task set | " + " | ".join(RUNGS) + " |",
         "|---|---|---|---|---|",
-        f"| all current tasks ({len(base)}) | {fmt(mr_all)} |",
-        f"| canonical set ({len(canon)}) | {fmt(mr_can)} |",
+        f"| canonical set ({len(canon)}) | "
+        + " | ".join(f"{v:.2f}" for v in mr) + " |",
         "",
-        f"**Pairwise dominance over the {len(base)} current tasks** — cell "
-        "= families where ROW strictly beats COLUMN (ties in parens):\n",
+        f"**Pairwise dominance over the {len(canon)} canonical families** "
+        "— cell = families where ROW strictly beats COLUMN (ties in "
+        "parens):\n",
         "| beats → | " + " | ".join(RUNGS) + " |",
         "|---|---|---|---|---|",
     ]
@@ -160,14 +160,13 @@ def _rank_section():
         lines.append(f"| **{name}** | " + " | ".join(cells) + " |")
     lines.append("")
     lines.append(
-        "Read: training clearly helps early (low beats worst 9–8, middle "
-        "beats worst 11–5) but the top of the ladder is genuinely "
-        "ambiguous — middle vs best is "
-        f"{wins[2][3][0]}–{wins[3][2][0]} with {wins[2][3][1]} ties "
-        "suite-wide, and the mean ranks tie at ~2.2. The strong "
-        "middle-over-best pattern lives in the discriminative families "
-        "(finding 2); the noise families scatter enough random wins to "
-        "even the suite-wide count.\n")
+        "Read: training clearly helps early (middle beats worst "
+        f"{wins[2][0][0]}–{wins[0][2][0]}), and on the canonical set "
+        "middle leads the top of the ladder — mean rank "
+        f"{mr[2]:.2f} vs {mr[3]:.2f}, middle over best "
+        f"{wins[2][3][0]}–{wins[3][2][0]} with {wins[2][3][1]} tie(s) — "
+        "consistent with finding 2 (middle's visual pathway is the "
+        "stronger representation).\n")
     return "\n".join(lines)
 
 MID_AT = 0.50

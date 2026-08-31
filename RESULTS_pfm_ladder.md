@@ -39,27 +39,26 @@ Cell colour is the value normalised to the row's own scale (of-30 rows /30, of-4
 
 **2026-08-31 update (job 15735): occlusion re-run on v2** (plate rim inset — the v1 static leak — plus full-turn endpoint and the new suite-wide all-intra `-g 1` encoding that removes shared-history codec residue). The v1 monotone occlusion-mean row does NOT survive: under the clean design `low` (step 1000) is at CEILING (raw 29-30/30, mean 30/30) while middle/best (step 10000) fall to 19/23 mean-cos and 2-5/30 raw, F16 to 0-4. Since every public model (V-JEPA, Qwen, Cosmos, FastWAM, incl. the JEPA predictor readout) is at ~0/30 on v2, pfm-low is the only encoder whose last-second readout retains the IN-WINDOW red reveal (the plate hides at 270°, i.e. ~T/4 = 0.4-0.7s before the end, so red is on camera for the first 0.3-0.6s of the measured window; every public model washes it out) — and continued training destroys it. Note this is early-in-window retention, NOT recall of content outside the window (bounce_void/deform_history test that, and everything including pfm is at chance there). Read with care: it inverts the ladder, like counting_sweep.
 
-## Rank-based ladder summary
+## Rank-based ladder summary (canonical set)
 
-Scale-free companion to the AVERAGE rows (a plain score average lets a few big-margin families dominate and lets noise families pad every rung): within each family, rank the four F32 training rungs by row-normalised score (rank 1 = best; ties share the mean rank), then aggregate. F16/F4 are frame-count controls, not training rungs, so they sit out.
+Scale-free companion to the AVERAGE rows (a plain score average lets a few big-margin families dominate and lets noise families pad every rung): within each canonical family (RESULTS.md 2026-08-31), rank the four F32 training rungs by row-normalised score (rank 1 = best; ties share the mean rank), then aggregate. F16/F4 are frame-count controls, not training rungs, so they sit out; non-canonical rows are excluded throughout.
 
 **Mean rank (1 = best):**
 
 | task set | worst | low | middle | best |
 |---|---|---|---|---|
-| all current tasks (17) | 2.91 | 2.74 | 2.18 | 2.18 |
 | canonical set (13) | 3.00 | 2.81 | 2.04 | 2.15 |
 
-**Pairwise dominance over the 17 current tasks** — cell = families where ROW strictly beats COLUMN (ties in parens):
+**Pairwise dominance over the 13 canonical families** — cell = families where ROW strictly beats COLUMN (ties in parens):
 
 | beats → | worst | low | middle | best |
 |---|---|---|---|---|
-| **worst** | — | 8 (0) | 5 (1) | 4 (2) |
-| **low** | 9 (0) | — | 6 (1) | 5 (2) |
-| **middle** | 11 (1) | 10 (1) | — | 8 (2) |
-| **best** | 11 (2) | 10 (2) | 7 (2) | — |
+| **worst** | — | 6 (0) | 3 (1) | 3 (1) |
+| **low** | 7 (0) | — | 4 (1) | 3 (2) |
+| **middle** | 9 (1) | 8 (1) | — | 7 (1) |
+| **best** | 9 (1) | 8 (2) | 5 (1) | — |
 
-Read: training clearly helps early (low beats worst 9–8, middle beats worst 11–5) but the top of the ladder is genuinely ambiguous — middle vs best is 8–7 with 2 ties suite-wide, and the mean ranks tie at ~2.2. The strong middle-over-best pattern lives in the discriminative families (finding 2); the noise families scatter enough random wins to even the suite-wide count.
+Read: training clearly helps early (middle beats worst 9–3), and on the canonical set middle leads the top of the ladder — mean rank 2.04 vs 2.15, middle over best 7–5 with 1 tie(s) — consistent with finding 2 (middle's visual pathway is the stronger representation).
 
 ## Findings
 
