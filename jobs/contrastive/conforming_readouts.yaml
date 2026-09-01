@@ -1,0 +1,105 @@
+name: kenny-conforming
+
+# Bring every model onto the eval's OWN definition of the interface:
+#   W(o_1:t) = z_{t+1}, the PREDICTED NEXT LATENT after the scene.
+# Audit of what each model can actually offer:
+#   V-JEPA 2      vjepa2_next_*    predictor forecast of the next token   CONFORMS
+#   V-JEPA 2-AC   vjepa2ac_next_*  natively trained next-latent           CONFORMS
+#   Cosmos        cosmos_pred_*    returned 1-step denoised latent        CONFORMS  <- this job
+#   Qwen          qwen3vl_next_*   causal: hidden state at the FINAL      APPROX    <- this job
+#                                  position is the next-token predictive
+#                                  state (raw/mean pooled the last second,
+#                                  which is an observation encoding)
+#   FastWAM       (none)           infer_action encodes the CURRENT frame
+#                                  and denoises an ACTION; there is no
+#                                  future-state latent on this path        N/A
+# cosmos_pred already exists for basic_position, collision, deform_history
+# (job 15381); this computes the rest of the canonical set for both models.
+#   sky jobs launch -n kenny-conforming -y jobs/contrastive/conforming_readouts.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+  bash scripts/setup_qwen.sh
+  bash scripts/setup_cosmos.sh
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  FLAT="cube basic_color basic_position roll occlusion bowl"
+  REC="count3_sweep bounce_void collision deform_history"
+  clips_for() {
+    case $1 in
+      translation) printf 't_%02d ' $(seq 0 15);;
+      rotation)    printf 'r_%02d ' $(seq 0 15);;
+      velocity)    printf 'v_%02d ' $(seq 0 15);;
+    esac
+  }
+
+  ( source /data/qwen/venv/bin/activate
+    echo "=== qwen next-position readout ==="
+    PYTHONPATH=. python scripts/check_encoder_determinism.py qwen3vl_next_raw \
+        $(find /data/videos/roll -name A.mp4 | head -1)
+    for R in $FLAT; do
+      python -m evals.precompute --root /data/videos/$R --clips A B C \
+          --encoders qwen3vl_next_raw qwen3vl_next_mean
+    done
+    for R in $REC; do
+      python -m evals.precompute --root /data/videos/$R --recursive --clips A B C \
+          --encoders qwen3vl_next_raw qwen3vl_next_mean
+    done
+    for R in translation rotation velocity; do
+      python -m evals.precompute --root /data/videos/$R --clips $(clips_for $R) \
+          --encoders qwen3vl_next_raw qwen3vl_next_mean
+    done
+  ) || echo "QWEN STEP FAILED"
+
+  ( source /data/cosmos/venv/bin/activate
+    echo "=== cosmos 1-step predicted latent ==="
+    for R in $FLAT; do
+      python -m evals.precompute --root /data/videos/$R --clips A B C \
+          --encoders cosmos_pred_raw cosmos_pred_mean
+    done
+    for R in $REC; do
+      python -m evals.precompute --root /data/videos/$R --recursive --clips A B C \
+          --encoders cosmos_pred_raw cosmos_pred_mean
+    done
+    for R in translation rotation velocity; do
+      python -m evals.precompute --root /data/videos/$R --clips $(clips_for $R) \
+          --encoders cosmos_pred_raw cosmos_pred_mean
+    done
+  ) || echo "COSMOS STEP FAILED"
+
+  ENC="saved:vjepa2_next_raw saved:vjepa2ac_next_raw saved:qwen3vl_next_raw saved:cosmos_pred_raw saved:fastwam_raw"
+  for R in $FLAT; do
+    echo "=== TABLE (conforming): $R ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $ENC
+  done
+  echo "=== TABLE (conforming): count3_sweep ==="
+  python -m evals.contrastive.aggregate_counting --root /data/videos/count3_sweep --encoders $ENC
+  for R in bounce_void collision deform_history; do
+    echo "=== TABLE (conforming): $R ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+  done
+  for R in translation rotation velocity; do
+    echo "=== CONTINUOUS TABLE (conforming): $R ==="
+    python -m evals.continuous.measure --root /data/videos/$R --encoders $ENC
+  done

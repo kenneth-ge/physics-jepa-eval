@@ -64,6 +64,8 @@ _REGISTRY = {
     "fastwam_zf_mean": lambda: _fastwam("zf_mean"),
     "qwen3vl_raw": lambda: _qwen3vl("raw"),
     "qwen3vl_mean": lambda: _qwen3vl("mean"),
+    "qwen3vl_next_raw": lambda: _qwen3vl("next_raw"),
+    "qwen3vl_next_mean": lambda: _qwen3vl("next_mean"),
     "cosmos_raw": lambda: _cosmos("raw"),
     "cosmos_mean": lambda: _cosmos("mean"),
     "cosmos_pred_raw": lambda: _cosmos("pred_raw"),

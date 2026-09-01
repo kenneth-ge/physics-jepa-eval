@@ -53,8 +53,15 @@ def _load():
 
 
 class Qwen3VLEncoder(Encoder):
+    """raw/mean pool the observed last second. next_raw/next_mean take ONLY
+    the FINAL temporal step's video tokens: the model is causal, so the hidden
+    state at the last position is the state from which the next token is
+    predicted — the closest available approximation to the eval's
+    W(o_1:t) = z_{t+1} (a predicted next latent) for a VLM with no explicit
+    latent-forecast head."""
+
     def __init__(self, readout="raw"):
-        assert readout in ("raw", "mean")
+        assert readout in ("raw", "mean", "next_raw", "next_mean")
         self.readout = readout
         self.name = f"qwen3vl_{readout}"
 
@@ -80,6 +87,10 @@ class Qwen3VLEncoder(Encoder):
         vid = hs[ids == s["vid_tok"]]                        # (t*h*w, hidden)
         t, h, w = inputs["video_grid_thw"][0].tolist()
         vid = vid.view(t, h * w, -1)                          # (t, tokens, hidden)
-        steps = max(1, round(FPS / s["tps"]))                # ~last second of temporal steps
+        if self.readout.startswith("next"):
+            steps = 1                                        # final position only
+        else:
+            steps = max(1, round(FPS / s["tps"]))            # ~last second
         last = vid[-steps:].reshape(-1, vid.shape[-1]).float().cpu().numpy()
-        return last.mean(axis=0).ravel() if self.readout == "mean" else last.ravel()
+        return (last.mean(axis=0).ravel() if self.readout.endswith("mean")
+                else last.ravel())

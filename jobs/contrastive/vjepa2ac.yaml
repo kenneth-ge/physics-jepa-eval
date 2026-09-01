@@ -21,7 +21,8 @@ resources:
   accelerators: H200:1
   cpus: 20
   memory: 230
-  disk_size: 200
+  # No disk_size: the 11.8GB checkpoint lands on the /data volume, and asking
+  # for local disk makes the k8s pool unsatisfiable (job 16540 precheck fail).
   labels:
     telemetry-contract: opt-out
     telemetry-opt-out-reason: encode-only-feature-extraction
