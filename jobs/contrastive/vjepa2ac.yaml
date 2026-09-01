@@ -1,0 +1,97 @@
+name: kenny-vjepa2ac
+
+# V-JEPA 2-AC (action-conditioned) over the canonical families. This is the
+# FAIR TEST of the OOD caveat on our base-V-JEPA forecasting readouts: base
+# V-JEPA 2 pretrains with temporal mask ratio ~1.0 (spatial blocks spanning all
+# frames) so it was never trained to predict later timesteps from earlier ones,
+# whereas AC is trained exactly on next-frame latent prediction. AC also
+# encodes PER FRAME, so all temporal information flows through the predictor
+# and the forecast is genuinely future-blind (no bidirectional leak).
+#
+# Conditioning: action = zeros(7) (RELATIVE deltas; zero = "did not move", the
+# mode of the distribution and Meta's own CEM prior) and state = a constant
+# plausible DROID end-effector pose with the gripper OPEN (ABSOLUTE pose, so
+# zeros would be kinematically impossible). See evals/encoders/vjepa2_ac.py.
+#
+# Expect encoder-side OOD (no robot/table/Franka in our MuJoCo scenes; upstream
+# issue #110 is this exact setup) — a null result is informative, not a bug.
+#   sky jobs launch -n kenny-vjepa2ac -y jobs/contrastive/vjepa2ac.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  disk_size: 200
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+  VJEPA2AC_ROOT: /data/vjepa2ac
+  VJEPA2AC_CKPT: /data/vjepa2ac/vjepa2-ac-vitg.pt
+  VJEPA2AC_REPO: /data/vjepa2ac/vjepa2
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg git wget
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "imageio[ffmpeg]" numpy timm einops
+  bash scripts/setup_vjepa2ac.sh
+
+run: |
+  set +e
+  python -c "import torch; assert torch.cuda.is_available(); print('cuda ok')"
+  TAGS="vjepa2ac_next_raw vjepa2ac_next_mean"
+
+  echo "=== smoke: load + one clip, check shapes/determinism ==="
+  V=$(find /data/videos/roll -name A.mp4 | head -1)
+  PYTHONPATH=. python scripts/check_encoder_determinism.py vjepa2ac_next_raw "$V" || {
+      echo "AC SMOKE FAILED — aborting"; exit 1; }
+
+  # Canonical set only (13 families); roll first since it is the family where
+  # base V-JEPA's forecast readout produced the headline 0/30 -> 30/30.
+  FLAT="roll cube basic_color basic_position occlusion bowl"
+  REC="count3_sweep bounce_void collision deform_history"
+
+  for R in $FLAT; do
+    echo "=== ac precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips A B C --encoders $TAGS
+  done
+  for R in $REC; do
+    echo "=== ac precompute $R (recursive) ==="
+    python -m evals.precompute --root /data/videos/$R --recursive --clips A B C --encoders $TAGS
+  done
+
+  clips_for() {
+    case $1 in
+      translation) printf 't_%02d ' $(seq 0 15);;
+      rotation)    printf 'r_%02d ' $(seq 0 15);;
+      velocity)    printf 'v_%02d ' $(seq 0 15);;
+    esac
+  }
+  for R in translation rotation velocity; do
+    echo "=== ac precompute $R (continuous) ==="
+    python -m evals.precompute --root /data/videos/$R --clips $(clips_for $R) --encoders $TAGS
+  done
+
+  ENC="saved:vjepa2_raw saved:vjepa2_next_raw saved:vjepa2ac_next_raw saved:vjepa2ac_next_mean"
+  for R in $FLAT; do
+    echo "=== TABLE: $R (AC vs base) ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $ENC
+  done
+  echo "=== TABLE: count3_sweep (AC vs base) ==="
+  python -m evals.contrastive.aggregate_counting --root /data/videos/count3_sweep --encoders $ENC
+  for R in bounce_void collision deform_history; do
+    echo "=== TABLE: $R (AC vs base) ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+  done
+  for R in translation rotation velocity; do
+    echo "=== CONTINUOUS TABLE: $R (AC vs base) ==="
+    python -m evals.continuous.measure --root /data/videos/$R --encoders $ENC
+  done

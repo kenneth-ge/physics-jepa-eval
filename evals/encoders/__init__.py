@@ -16,6 +16,11 @@ def _vjepa(readout):
     return VJEPA2Encoder(readout)
 
 
+def _vjepa2ac(readout):
+    from .vjepa2_ac import VJEPA2ACEncoder
+    return VJEPA2ACEncoder(readout)
+
+
 def _fastwam(readout):
     from .fastwam import FastWAMEncoder
     return FastWAMEncoder(readout)
@@ -47,6 +52,10 @@ _REGISTRY = {
     "vjepa2_fut_mean": lambda: _vjepa("fut_mean"),
     "vjepa2_next_raw": lambda: _vjepa("next_raw"),
     "vjepa2_next_mean": lambda: _vjepa("next_mean"),
+    # V-JEPA 2-AC: trained in the temporal direction, so its forecast is not
+    # the OOD probe that base V-JEPA's is (see vjepa2_ac.py). Own env.
+    "vjepa2ac_next_raw": lambda: _vjepa2ac("next_raw"),
+    "vjepa2ac_next_mean": lambda: _vjepa2ac("next_mean"),
     "fastwam_raw": lambda: _fastwam("raw"),
     "fastwam_mean": lambda: _fastwam("mean"),
     "fastwam_z_raw": lambda: _fastwam("z_raw"),
