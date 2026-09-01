@@ -22,17 +22,22 @@ import pathlib
 # replaces the older vjepa2_pred_raw (which masked the observed last second,
 # hiding the action in exactly the families designed to put it there).
 COLS8 = ["VJEPA cos", "VJEPA L1", "VJEPA next cos", "VJEPA next L1",
+         "VJEPA-AC cos", "VJEPA-AC L1",
          "Qwen cos", "Qwen L1",
          "Cosmos cos", "Cosmos L1", "FastWAM cos", "FastWAM L1"]
+# Non-canonical families (count2, bounce/deform adjusted) predate the
+# canonical set, so V-JEPA 2-AC was never run on them; they keep the older
+# 10-column header.
+COLS_NOAC = [c for c in COLS8 if not c.startswith("VJEPA-AC")]
 
 # --- fixed-scene families (pass rate; per model: cos, l1) --------------------
 FIXED = [
-    ("bowl (4)",                [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.75, 0.75, 1.00, 1.00]),
-    ("cube v2 (30)",            [1.00, 1.00, 0.97, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    ("basic_color v2 (30)",     [0.93, 0.93, 1.00, 0.97, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    ("basic_position (30)",     [0.97, 0.97, 1.00, 1.00, 0.97, 0.97, 1.00, 0.97, 1.00, 1.00]),
-    ("roll (30)",               [0.00, 0.00, 1.00, 1.00, 0.77, 0.83, 0.93, 0.97, 0.40, 0.43]),
-    ("occlusion v2 (30)",       [0.00, 0.00, 0.00, 0.00, 0.07, 0.03, 0.00, 0.00, 0.00, 0.00]),
+    ("bowl (4)",                [1.00, 1.00, 1.00, 1.00, 0.00, 0.00, 1.00, 1.00, 0.75, 0.75, 1.00, 1.00]),
+    ("cube v2 (30)",            [1.00, 1.00, 0.97, 0.97, 0.97, 0.93, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    ("basic_color v2 (30)",     [0.93, 0.93, 1.00, 0.97, 0.63, 0.73, 0.97, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    ("basic_position (30)",     [0.97, 0.97, 1.00, 1.00, 0.77, 0.77, 0.97, 0.97, 1.00, 0.97, 1.00, 1.00]),
+    ("roll (30)",               [0.00, 0.00, 1.00, 1.00, 0.20, 0.10, 0.77, 0.83, 0.93, 0.97, 0.40, 0.43]),
+    ("occlusion v2 (30)",       [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.07, 0.03, 0.00, 0.00, 0.00, 0.00]),
 ]
 
 # --- basic_counting: disjoint layouts, X+1 vs X (Cosmos/FastWAM measured) ----
@@ -59,15 +64,15 @@ COUNT2 = [
 
 # --- count3: NESTED counting, constant gaps (A⊂B⊂C; X, X+1, X+3; job 14914) --
 COUNT3 = [
-    (2,  [0.75, 0.75, 1.00, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (3,  [0.75, 0.75, 0.62, 0.50, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
-    (4,  [0.88, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
-    (5,  [0.88, 0.88, 0.75, 0.62, 0.75, 0.88, 0.88, 1.00, 0.50, 0.75]),
-    (6,  [1.00, 1.00, 0.75, 0.88, 0.88, 1.00, 0.88, 0.88, 1.00, 1.00]),
-    (7,  [0.75, 0.75, 0.62, 0.62, 0.75, 0.88, 1.00, 0.88, 0.88, 1.00]),
-    (8,  [1.00, 1.00, 0.75, 0.75, 0.75, 0.75, 1.00, 1.00, 0.88, 0.75]),
-    (9,  [0.75, 0.75, 0.88, 0.88, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
-    (10, [0.75, 0.62, 0.38, 0.38, 0.75, 0.88, 0.88, 0.88, 1.00, 1.00]),
+    (2,  [0.75, 0.75, 1.00, 0.88, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (3,  [0.75, 0.75, 0.62, 0.50, 1.00, 1.00, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
+    (4,  [0.88, 0.88, 1.00, 1.00, 0.75, 0.75, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+    (5,  [0.88, 0.88, 0.75, 0.62, 0.62, 0.62, 0.75, 0.88, 0.88, 1.00, 0.50, 0.75]),
+    (6,  [1.00, 1.00, 0.75, 0.88, 0.75, 0.75, 0.88, 1.00, 0.88, 0.88, 1.00, 1.00]),
+    (7,  [0.75, 0.75, 0.62, 0.62, 0.75, 0.88, 0.75, 0.88, 1.00, 0.88, 0.88, 1.00]),
+    (8,  [1.00, 1.00, 0.75, 0.75, 0.62, 0.50, 0.75, 0.75, 1.00, 1.00, 0.88, 0.75]),
+    (9,  [0.75, 0.75, 0.88, 0.88, 0.62, 0.75, 0.75, 0.88, 1.00, 1.00, 1.00, 1.00]),
+    (10, [0.75, 0.62, 0.38, 0.38, 0.38, 0.50, 0.75, 0.88, 0.88, 0.88, 1.00, 1.00]),
 ]
 
 # --- bounce ADJUSTED: rebound in last second; A,B share drop point, B = A + a
@@ -135,14 +140,17 @@ DEFORM_HIST = [
     (2.00, [0.00, 0.00, 0.00, 0.00, 0.12, 0.12, 0.25, 0.25]),
 ]
 
+AC_BY_FAMILY = {'BOUNCE_VOID': [(0.12, 0.12), (0.12, 0.12), (0.12, 0.12), (0.0, 0.0), (0.0, 0.0), (0.12, 0.12), (0.12, 0.0), (0.12, 0.12)], 'COLLISION': [(0.62, 0.62), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.12, 0.0), (0.25, 0.25)], 'DEFORM_HIST': [(0.25, 0.12), (0.12, 0.0), (0.25, 0.25), (0.0, 0.0), (0.12, 0.12), (0.0, 0.0), (0.38, 0.38), (0.12, 0.12)]}
+
 NEXT_BY_FAMILY = {'BOUNCE_ADJ': [(0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.12, 0.0), (0.12, 0.12), (0.88, 1.0), (1.0, 1.0)], 'DEFORM_ADJ': [(0.12, 0.12), (0.0, 0.0), (0.12, 0.12), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)], 'COLLISION': [(0.12, 0.12), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)], 'BOUNCE_VOID': [(0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)], 'DEFORM_HIST': [(0.0, 0.0), (0.25, 0.25), (0.12, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)]}
 
 
 def with_next(rows, family):
-    """Insert the VJEPA next-step (cos, l1) columns for a sweep family
-    (job 16521) after the two observed-raw columns."""
-    nx = NEXT_BY_FAMILY[family]
-    return [(f, v[:2] + list(nx[i]) + v[2:]) for i, (f, v) in enumerate(rows)]
+    """Insert the VJEPA next-step (job 16521) and VJEPA-AC (job 16541)
+    (cos, l1) column pairs after the two observed-raw columns."""
+    nx, ac = NEXT_BY_FAMILY[family], AC_BY_FAMILY.get(family)
+    return [(f, v[:2] + list(nx[i]) + (list(ac[i]) if ac else []) + v[2:])
+            for i, (f, v) in enumerate(rows)]
 
 
 CHANCE = 1.0 / 3.0
@@ -208,6 +216,41 @@ doc.append("cube v2 (job 14797): A,B share BOTH endpoints via different paths "
            "distribution probes. The invariant is relative and the same OOD "
            "condition applies to A, B and C, so it cancels, but these are "
            "not 'the model as trained'.\n")
+doc.append("**VJEPA-AC** (job 16541) is V-JEPA 2-AC, the action-conditioned "
+           "variant, and the ONLY model in the suite trained directly on the "
+           "objective this eval scores: it predicts the next latent, encodes "
+           "per frame so every temporal dependency passes through the "
+           "block-causal predictor, and is therefore future-blind by "
+           "construction. We condition on the null 'observe' action — a zero "
+           "vector, which is in-distribution because actions are unnormalised "
+           "relative deltas and zero means an end effector that did not move "
+           "— with the proprioceptive state held at a fixed plausible "
+           "end-effector pose, gripper open (that state is an ABSOLUTE pose, "
+           "so zeros there would be kinematically impossible). Despite being "
+           "the purpose-built interface it is WEAKER than base V-JEPA's "
+           "extrapolated readout nearly everywhere: roll 6/30 vs 30/30, bowl "
+           "0/4 vs 4/4, basic_color 19/30 vs 30/30, and velocity adjacency "
+           "0.03 against a 0.010 chance floor. Its failure has the shape of a "
+           "single-image readout — statics survive (cube 29/30) while motion "
+           "collapses — which fits the per-frame encoder plus the domain "
+           "shift of DROID-trained features on scenes with no robot, table or "
+           "manipulator anywhere in frame. AC is run only on the canonical "
+           "families, so the non-canonical tables below keep the older "
+           "10-column header.\n")
+doc.append("Readout conformance (see READOUTS.md): the eval scores "
+           "W(o_1:t) = z_{t+1}, a PREDICTED next latent. VJEPA next, VJEPA-AC "
+           "and Qwen supply one — Qwen by accident, since its "
+           "last-second window is already exactly one temporal step, i.e. the "
+           "causal final position, which we confirmed by measuring a "
+           "final-position readout and getting numerically identical results. "
+           "Cosmos and FastWAM do NOT: Cosmos's one-step latent output "
+           "reconstructs the frames it was conditioned on rather than "
+           "forecasting past them (and its cosine and L1 diverge wildly there "
+           "— collision cos 1.00 vs L1 0.00), and FastWAM's forward encodes "
+           "the current observation and denoises an ACTION, with no "
+           "future-state latent on that path. Both are reported on their "
+           "observed-state encodings and should be read as measuring what "
+           "the representation retains, not what it forecasts.\n")
 doc.append("FastWAM re-encoded from scratch (job 15391) under the corrected "
            "conditioning: a fixed cached T5 prompt embedding replaces the "
            "old all-zeros context, which decoded as a 128-token all-padding "
@@ -271,7 +314,7 @@ doc.append("VJEPA now measured (job 15396, raw cos/L1): 0.75 at X=1 falling "
            "Qwen (recorded live run): only X=1 passes.\n")
 
 doc.append("## count2 — NESTED counting (A⊂B⊂C: X, X+1, 2X), sweep over X\n")
-doc.append(table(["X"] + COLS8, COUNT2) + "\n")
+doc.append(table(["X"] + COLS_NOAC, COUNT2) + "\n")
 
 doc.append("## count3 — NESTED counting, constant gaps (A⊂B⊂C: X, X+1, X+3), "
            "sweep over X\n")
@@ -284,12 +327,12 @@ doc.append("Gaps stay 1 vs 2 cubes at every X (Weber-style: relative difference 
 
 doc.append("## bounce (adjusted) — rebound in the last second; A,B share drop "
            "point (B = A + 0.5s still prefix); sweep r2/r1 (r1=0.45; 1.00 = control C≡A)\n")
-doc.append(table(["factor"] + COLS8,
+doc.append(table(["factor"] + COLS_NOAC,
                  [(f"{f:.2f}", v) for f, v in with_next(BOUNCE_ADJ, "BOUNCE_ADJ")]) + "\n")
 
 doc.append("## deform (adjusted) — material stiffness; cube still squashed in the "
            "last second; sweep k2/k1 (1.00 = control C≡A)\n")
-doc.append(table(["factor"] + COLS8,
+doc.append(table(["factor"] + COLS_NOAC,
                  [(f"{f:.2f}", v) for f, v in with_next(DEFORM_ADJ, "DEFORM_ADJ")]) + "\n")
 doc.append("Last-frame models (Cosmos, FastWAM) read the squashed shape directly; "
            "whole-clip models (V-JEPA, Qwen) wash it out. deform (history) — same "
