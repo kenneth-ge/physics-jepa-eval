@@ -102,21 +102,83 @@ def _predicted_grid(model_id, path_str, seconds):
     return grid[sel].numpy()
 
 
+FUT_REAL = 48     # frame slots carrying the real clip in the fut readout; the
+                  # remaining NUM_FRAMES-FUT_REAL slots hold the frozen last
+                  # frame and are the prediction targets.
+NEXT_REAL = 62    # same, for the NEXT-step readout: only one temporal token
+                  # (TUBELET=2 frames) is predicted, so the placeholder span
+                  # is minimal and the real clip is sampled more densely.
+
+
+@functools.lru_cache(maxsize=64)
+def _future_grid(model_id, path_str, real_slots=FUT_REAL):
+    """(LAST_TOKENS, S, D) EXTRAPOLATED future token grid: the JEPA
+    predictor's output for a padded span BEYOND the clip, given the ENTIRE
+    real clip as context. Unlike _predicted_grid (which masks the observed
+    last second — i.e. hides the action from the predictor in the adjusted
+    families), here the encoder sees all the dynamics and we read out its
+    forecast of what happens next. The target slots contain the frozen last
+    frame, identical across A/B/C wherever end states are shared, so the
+    placeholder cancels out of the relative invariant; the implied future
+    span is (1 - FUT_REAL/NUM_FRAMES) of the clip duration (~1s on a 3s
+    clip). This readout is future-blind by construction: the target region
+    holds no real future content for the bidirectional encoder to leak.
+
+    real_slots picks the horizon: FUT_REAL -> ~1s block rollout (8 tokens);
+    NEXT_REAL -> the NEXT temporal token only (2 frames, ~0.1s), which asks
+    for instantaneous dynamics instead of a compounding rollout and keeps
+    the frozen-frame placeholder (and its static bias) minimal."""
+    import torch
+    processor, model, device = _load(model_id)
+    frames, fps = load_video(pathlib.Path(path_str))
+    idx = np.round(np.linspace(0, len(frames) - 1, real_slots)).astype(int)
+    padded = list(frames[idx]) + [frames[-1]] * (NUM_FRAMES - real_slots)
+    inputs = processor(videos=padded, return_tensors="pt").to(device)
+
+    pv = inputs["pixel_values_videos"]
+    patch = model.config.patch_size
+    S = (pv.shape[-2] // patch) * (pv.shape[-1] // patch)
+    T = NUM_FRAMES // TUBELET
+    ctx_t = np.arange(real_slots // TUBELET)
+    tgt_t = np.arange(real_slots // TUBELET, T)
+
+    def flat(ts):
+        i = (np.asarray(ts)[:, None] * S + np.arange(S)[None, :]).ravel()
+        return torch.tensor(i, device=device)[None]
+
+    with torch.inference_mode():
+        out = model(**inputs, context_mask=[flat(ctx_t)],
+                    target_mask=[flat(tgt_t)])
+        pred = out.predictor_output.last_hidden_state[0].float().cpu()
+    grid = pred.reshape(len(tgt_t), S, -1)
+    return grid.numpy()
+
+
 class VJEPA2Encoder(Encoder):
     """raw/mean = encoder tokens of the observed last second; pred_raw /
     pred_mean = the predictor's FORECAST of the last-second tokens from the
-    preceding context (see _predicted_grid caveat)."""
+    preceding context (see _predicted_grid caveat); next_raw / next_mean and
+    fut_raw / fut_mean = the predictor's EXTRAPOLATION beyond the clip from
+    the whole clip as context, at the next-token (~0.1s) and ~1s horizons
+    respectively (see _future_grid)."""
 
     def __init__(self, readout="raw", model_id=MODEL_ID, seconds=1.0):
-        assert readout in ("raw", "mean", "pred_raw", "pred_mean")
+        assert readout in ("raw", "mean", "pred_raw", "pred_mean",
+                           "fut_raw", "fut_mean", "next_raw", "next_mean")
         self.readout = readout
         self.model_id = model_id
         self.seconds = seconds
         self.name = f"vjepa2_{readout}"
 
     def encode(self, video_path):
-        fn = _predicted_grid if self.readout.startswith("pred") else _last_second_grid
-        grid = fn(self.model_id, str(video_path), self.seconds)
+        if self.readout.startswith(("fut", "next")):
+            grid = _future_grid(self.model_id, str(video_path),
+                                FUT_REAL if self.readout.startswith("fut")
+                                else NEXT_REAL)
+        else:
+            fn = (_predicted_grid if self.readout.startswith("pred")
+                  else _last_second_grid)
+            grid = fn(self.model_id, str(video_path), self.seconds)
         if self.readout.endswith("mean"):
             return grid.mean(axis=(0, 1)).ravel()   # position-blind
         return grid.ravel()                          # position-aligned

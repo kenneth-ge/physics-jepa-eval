@@ -43,6 +43,10 @@ _REGISTRY = {
     "vjepa2_mean": lambda: _vjepa("mean"),
     "vjepa2_pred_raw": lambda: _vjepa("pred_raw"),
     "vjepa2_pred_mean": lambda: _vjepa("pred_mean"),
+    "vjepa2_fut_raw": lambda: _vjepa("fut_raw"),
+    "vjepa2_fut_mean": lambda: _vjepa("fut_mean"),
+    "vjepa2_next_raw": lambda: _vjepa("next_raw"),
+    "vjepa2_next_mean": lambda: _vjepa("next_mean"),
     "fastwam_raw": lambda: _fastwam("raw"),
     "fastwam_mean": lambda: _fastwam("mean"),
     "fastwam_z_raw": lambda: _fastwam("z_raw"),
@@ -64,7 +68,12 @@ for _role in ("worst", "low", "middle", "best", "f16", "f4"):
         _REGISTRY[f"pfm_{_role}_{_ro}"] = (
             lambda r=_role, o=_ro: _pfm(r, o))
 
-DEFAULT_ENCODERS = ["vjepa2_raw", "vjepa2_mean"]
+# The canonical V-JEPA pair: the observed last-second state (raw) and the
+# NEXT-token forecast past the clip (next_raw), which is the readout that
+# exposes dynamics — the observed state alone misses them (roll 0/30 vs 30/30
+# for the extrapolated readout). `mean`, `pred_*` and `fut_*` stay registered
+# for comparisons but are no longer the default.
+DEFAULT_ENCODERS = ["vjepa2_raw", "vjepa2_next_raw"]
 
 
 def available():

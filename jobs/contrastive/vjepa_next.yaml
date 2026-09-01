@@ -1,0 +1,84 @@
+name: kenny-vjepa-next
+
+# V-JEPA 2 NEXT-STEP readout: vjepa2_next_{raw,mean} = the JEPA predictor's
+# forecast of the NEXT temporal token (TUBELET=2 frames, ~0.1s) just past the
+# clip, with the ENTIRE real clip as context (real clip in the first 62 of 64
+# frame slots, frozen last frame in the last 2; target = that one token).
+# Unlike vjepa2_pred (which masks the observed last second — hiding the
+# action in the adjusted families), next sees all the dynamics and must
+# extrapolate them one step; vs the ~1s fut horizon (job 16503) it asks for
+# instantaneous dynamics rather than a compounding rollout and keeps the
+# frozen-frame placeholder minimal. Future-blind by construction.
+#   sky jobs launch -n kenny-vjepa-next -y jobs/contrastive/vjepa_next.yaml
+
+resources:
+  accelerators: H200:1
+  cpus: 20
+  memory: 230
+  labels:
+    telemetry-contract: opt-out
+    telemetry-opt-out-reason: encode-only-feature-extraction
+
+workdir: .
+
+volumes:
+  /data: kenny-data
+
+envs:
+  HF_HOME: /data/hf
+
+setup: |
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq ffmpeg
+  pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  pip install -q "transformers>=4.53" accelerate "imageio[ffmpeg]" numpy
+
+run: |
+  set +e
+  FLAT="cube basic_color basic_position roll occlusion bowl"
+  REC="counting_sweep count2_sweep count3_sweep bounce_sweep bounce_void collision deform_adjusted deform_history"
+  ENC_NEW="vjepa2_next_raw vjepa2_next_mean"
+
+  echo "=== determinism / smoke check ==="
+  V=$(find /data/videos/roll -name A.mp4 | head -1)
+  PYTHONPATH=. python scripts/check_encoder_determinism.py vjepa2_next_raw "$V"
+
+  for R in $FLAT; do
+    echo "=== vjepa next precompute $R ==="
+    python -m evals.precompute --root /data/videos/$R --clips A B C --encoders $ENC_NEW
+  done
+  for R in $REC; do
+    echo "=== vjepa next precompute $R (recursive) ==="
+    python -m evals.precompute --root /data/videos/$R --recursive --clips A B C --encoders $ENC_NEW
+  done
+
+  clips_for() {
+    case $1 in
+      translation) printf 't_%02d ' $(seq 0 15);;
+      rotation)    printf 'r_%02d ' $(seq 0 15);;
+      velocity)    printf 'v_%02d ' $(seq 0 15);;
+    esac
+  }
+  for R in translation rotation velocity; do
+    echo "=== vjepa next precompute $R (continuous) ==="
+    python -m evals.precompute --root /data/videos/$R --clips $(clips_for $R) --encoders $ENC_NEW
+  done
+
+  ENC="saved:vjepa2_raw saved:vjepa2_pred_raw saved:vjepa2_next_raw saved:vjepa2_next_mean"
+  for R in cube basic_color basic_position roll occlusion bowl; do
+    echo "=== TABLE: $R (vjepa next) ==="
+    python -m evals.contrastive.measure --root /data/videos/$R --encoders $ENC
+  done
+  for R in counting_sweep count2_sweep count3_sweep; do
+    echo "=== TABLE: $R (vjepa next) ==="
+    python -m evals.contrastive.aggregate_counting --root /data/videos/$R --encoders $ENC
+  done
+  for R in bounce_sweep bounce_void collision deform_adjusted deform_history; do
+    echo "=== TABLE: $R (vjepa next) ==="
+    python -m evals.contrastive.aggregate_bounce --root /data/videos/$R --encoders $ENC
+  done
+  for R in translation rotation velocity; do
+    echo "=== CONTINUOUS TABLE: $R (vjepa next) ==="
+    python -m evals.continuous.measure --root /data/videos/$R --encoders \
+        saved:vjepa2_raw saved:vjepa2_pred_raw saved:vjepa2_next_raw saved:vjepa2_next_mean
+  done
